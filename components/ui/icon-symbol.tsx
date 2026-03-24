@@ -18,6 +18,21 @@ const MAPPING = {
   'paperplane.fill': 'send',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
+  'waveform.path.ecg': 'sensors',
+  'clock.fill': 'history',
+  'pencil.circle.fill': 'edit',
+  'check.circle.fill': 'check-circle',
+  'exclamationmark.triangle.fill': 'warning',
+  'flame.fill': 'local-fire-department',
+  'sensor.fill': 'sensors',
+  'wifi.slash': 'wifi-off',
+  'server.rack': 'storage',
+  'antenna.radiowaves.left.and.right': 'settings-input-antenna',
+  'antenna.radiowaves.left.and.right.slash': 'signal-wifi-off',
+  'exclamationmark.magnifyingglass': 'search-off',
+  'gearshape.fill': 'settings',
+  'sun.max.fill': 'light-mode',
+  'moon.fill': 'dark-mode',
 } as IconMapping;
 
 /**

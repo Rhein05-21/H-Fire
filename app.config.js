@@ -1,4 +1,6 @@
-{
+import 'dotenv/config';
+
+export default {
   "expo": {
     "name": "H-Fire: Fire/Gas Leak Monitoring System",
     "slug": "h-fire",
@@ -9,7 +11,10 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "config": {
+        "googleMapsApiKey": process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +24,12 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "config": {
+        "googleMaps": {
+          "apiKey": process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY
+        }
+      }
     },
     "web": {
       "output": "static",
@@ -45,4 +55,4 @@
       "reactCompiler": true
     }
   }
-}
+};
