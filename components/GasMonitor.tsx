@@ -257,90 +257,60 @@ export default function GasDashboard() {
           if (parts.length < 2) return;
 
           const houseId = parts[1];
-          const type = parts[2];
+          const type = parts[2]; // data, status, config, etc.
 
           setDevices((prev) => {
-            let macFromPayload = '___';
+            let macFromPayload = 'Unknown';
             let ppmFromPayload = -1;
             let statusFromPayload = '';
 
+            // Try to parse JSON from ESP32
             if (payload.startsWith('{')) {
               try {
                 const json = JSON.parse(payload);
-                macFromPayload = json.mac || '___';
+                macFromPayload = json.mac || 'Unknown';
                 ppmFromPayload = json.ppm !== undefined ? parseInt(json.ppm, 10) : -1;
-                statusFromPayload = json.status;
+                statusFromPayload = json.status || '';
               } catch (e) {}
             }
 
-            // Standardized device identification
-            const targetMac = macFromPayload !== '___' ? macFromPayload : (type === 'mac' ? payload : '___');
-            
-            // 1. Find existing device key (prioritize matching MAC, then House ID)
-            let existingKey = Object.keys(prev).find(key => 
-              (targetMac !== '___' && (key === targetMac || prev[key].mac === targetMac)) || 
-              key === houseId ||
-              prev[key].houseId === houseId
-            );
-            
-            const effectiveKey = existingKey || (targetMac !== '___' ? targetMac : houseId);
-            const existing = prev[effectiveKey];
+            // Identify device by MAC or houseId
+            const deviceKey = (macFromPayload !== 'Unknown') ? macFromPayload : houseId;
+            const existing = prev[deviceKey];
 
             const updated: Device = existing ? { ...existing } : { 
-              id: effectiveKey,
-              mac: targetMac !== '___' ? targetMac : (type === 'mac' ? payload : '...'), 
-              ppm: ppmFromPayload !== -1 ? ppmFromPayload : 0, 
-              status: statusFromPayload || 'Normal', 
-              label: labelsRef.current[effectiveKey] || `House ${houseId}`,
+              id: deviceKey,
+              mac: macFromPayload, 
+              ppm: 0, 
+              status: 'Normal', 
+              label: labelsRef.current[deviceKey] || `House ${houseId}`,
               houseId,
               lastSeen: new Date()
             };
 
+            // Update fields based on what we received
             if (ppmFromPayload !== -1) updated.ppm = ppmFromPayload;
-            else if (type === 'ppm') updated.ppm = parseInt(payload, 10) || 0;
-
-            if (macFromPayload !== '___') updated.mac = macFromPayload;
-            else if (type === 'mac') updated.mac = payload;
+            else if (type === 'data' && !payload.startsWith('{')) updated.ppm = parseInt(payload, 10) || 0;
 
             if (statusFromPayload) updated.status = statusFromPayload;
             else if (type === 'status') updated.status = payload;
             
             updated.lastSeen = new Date();
-
             if (updated.status === 'SAFE') updated.status = 'Normal';
 
+            // Alert logic
             const s = updated.status.toUpperCase();
-            const isDanger = s.includes('CRITICAL') || s.includes('FIRE') || s.includes('DANGER');
-            const isWarning = s.includes('WARNING') || s.includes('SMOKE') || s.includes('GAS');
-
-            if (isDanger || isWarning) {
+            if (s.includes('FIRE') || s.includes('SMOKE') || s.includes('WARNING') || s.includes('CRITICAL')) {
               if (!existing || existing.status !== updated.status) {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
               }
-              // Automatically save to database ONLY if we have a valid MAC
-              if (updated.mac !== '...' && updated.mac !== 'Unknown') {
+              // Auto-save log to database for history
+              if (updated.mac !== 'Unknown') {
                 saveLog(updated.mac, updated.ppm, updated.status);
               }
             }
 
-            // 2. Aggressive Migration Logic: If we now have a MAC, ensure it's the ONLY key for this device
-            if (targetMac !== '___' && targetMac !== 'Unknown') {
-              const newDevices = { ...prev };
-              
-              // Find and remove any record that matches this MAC or HouseID but isn't the macKey
-              Object.keys(newDevices).forEach(key => {
-                if (key !== targetMac && (newDevices[key].mac === targetMac || newDevices[key].houseId === houseId)) {
-                  delete newDevices[key];
-                }
-              });
-
-              return { 
-                ...newDevices, 
-                [targetMac]: { ...updated, id: targetMac, mac: targetMac } 
-              };
-            }
-
-            return { ...prev, [effectiveKey]: updated };
+            return { ...prev, [deviceKey]: updated };
           });
         } catch (msgErr) {
           console.error('MQTT Msg Err:', msgErr);
