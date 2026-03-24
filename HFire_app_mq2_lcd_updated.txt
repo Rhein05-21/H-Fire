@@ -29,9 +29,7 @@ String deviceMac = "";
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   String message;
-  for (int i = 0; i < length; i++) {
-    message += (char)payload[i];
-  }
+  for (int i = 0; i < length; i++) message += (char)payload[i];
 
   if (String(topic) == topic_config && message == "RESET_WIFI") {
     lcd.clear();
@@ -53,49 +51,46 @@ void configModeCallback (WiFiManager *myWiFiManager) {
 
 void setup_wifi() {
   WiFiManager wm;
-  
-  // Set the callback for AP mode
   wm.setAPCallback(configModeCallback);
-  
-  // Wait 30 seconds to connect to saved WiFi before starting the hotspot
   wm.setConnectTimeout(30);
-  
-  // Hotspot timeout (3 mins)
   wm.setConfigPortalTimeout(180);
 
-  // If autoConnect fails (after timeout), it will restart
   if (!wm.autoConnect("H-Fire-Setup")) {
-    Serial.println("Failed to connect and hit timeout");
     lcd.clear();
     lcd.print("Setup Timeout");
     delay(3000);
     ESP.restart();
   }
 
-  Serial.println("WiFi connected");
   deviceMac = WiFi.macAddress();
   espClient.setInsecure(); 
 }
 
 void reconnect() {
   while (!client.connected()) {
-    // CRITICAL: If WiFi is lost during MQTT retry, restart to trigger Hotspot
+    // 1. Check if WiFi is still alive
     if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("WiFi Lost! Restarting...");
-      lcd.clear();
-      lcd.print("WiFi Lost...");
+      lcd.setCursor(0, 1);
+      lcd.print("WiFi Lost!      "); // Clear line with spaces
       delay(2000);
-      ESP.restart();
+      ESP.restart(); // Trigger Hotspot via restart
     }
 
+    // 2. Try MQTT Connection
     Serial.print("Attempting MQTT connection...");
     if (client.connect(deviceMac.c_str(), mqtt_user, mqtt_pass)) {
       Serial.println("connected");
       client.subscribe(topic_config);
       client.publish(topic_status, "System Online");
-    } else {
+      
+      // Clear the "Retry" message from line 2
       lcd.setCursor(0, 1);
-      lcd.print("MQTT Retry...");
+      lcd.print("Connected!      ");
+      delay(1000);
+    } else {
+      // Show Retry on Line 2, but keep Line 1 (PPM) visible
+      lcd.setCursor(0, 1);
+      lcd.print("MQTT Retry...   "); // 16 characters to clear line
       delay(5000);
     }
   }
@@ -104,10 +99,11 @@ void reconnect() {
 void setup() {
   Serial.begin(115200);
   pinMode(BUZZER_PIN, OUTPUT);
-  
   lcd.init();
   lcd.backlight();
   
+  lcd.setCursor(0,0);
+  lcd.print("H-Fire Booting..");
   setup_wifi();
   
   lcd.clear();
@@ -123,9 +119,12 @@ void setup() {
 }
 
 void loop() {
-  // Constant check for WiFi and MQTT
+  // If WiFi breaks, restart immediately to open hotspot
   if (WiFi.status() != WL_CONNECTED) {
-    ESP.restart(); // Force WiFiManager setup if connection breaks
+    lcd.setCursor(0, 1);
+    lcd.print("WiFi Lost!      ");
+    delay(2000);
+    ESP.restart();
   }
 
   if (!client.connected()) {
@@ -134,23 +133,30 @@ void loop() {
   client.loop();
 
   int ppm = analogRead(MQ2_PIN);
-  
-  // Alarm Logic
-  if (ppm > DANGER_LIMIT) {
-    digitalWrite(BUZZER_PIN, HIGH);
-  } else if (ppm > SAFE_LIMIT) {
-    digitalWrite(BUZZER_PIN, HIGH);
-    delay(100);
+  String statusMsg;
+
+  if (ppm <= SAFE_LIMIT) {
+    statusMsg = "SAFE            ";
+    digitalWrite(BUZZER_PIN, LOW);
+  } else if (ppm > SAFE_LIMIT && ppm <= DANGER_LIMIT) {
+    statusMsg = "WARNING: SMOKE  ";
+    digitalWrite(BUZZER_PIN, HIGH); 
+    delay(100); 
     digitalWrite(BUZZER_PIN, LOW);
   } else {
-    digitalWrite(BUZZER_PIN, LOW);
+    statusMsg = "CRITICAL: FIRE  ";
+    digitalWrite(BUZZER_PIN, HIGH);
   }
 
-  // LCD Update
+  // Row 1: PPM (Always visible)
   lcd.setCursor(0, 0);
   lcd.print("PPM: "); 
   lcd.print(ppm);
-  lcd.print("     "); 
+  lcd.print("     "); // Clear trailing numbers
+
+  // Row 2: Status
+  lcd.setCursor(0, 1); 
+  lcd.print(statusMsg);
 
   // Data Publish
   String dataPayload = "{\"mac\":\"" + deviceMac + "\", \"ppm\":" + String(ppm) + "}";
