@@ -13,7 +13,13 @@ const char* mqtt_pass = "052105@Rhein";
 // MQTT Topics
 const char* topic_data = "hfire/house1/data";
 const char* topic_status = "hfire/house1/status";
-const char* topic_config = "hfire/house1/config"; // NEW: Topic for remote commands
+const char* topic_config = "hfire/house1/config"; 
+
+// Pins & Thresholds (RESTORED MISSING DECLARATIONS)
+const int MQ2_PIN = 34;
+const int BUZZER_PIN = 25;
+const int SAFE_LIMIT = 450;
+const int DANGER_LIMIT = 1500;
 
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
@@ -44,8 +50,8 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     
     delay(2000);
     WiFiManager wm;
-    wm.resetSettings(); // Wipes saved SSID/Password
-    ESP.restart();      // Reboots into Setup Mode
+    wm.resetSettings(); 
+    ESP.restart();      
   }
 }
 
@@ -79,8 +85,6 @@ void reconnect() {
     if (client.connect(deviceMac.c_str(), mqtt_user, mqtt_pass)) {
       Serial.println("connected");
       client.publish(topic_status, "System Online");
-      
-      // IMPORTANT: Subscribe to the config topic for remote reset
       client.subscribe(topic_config);
     } else {
       lcd.setCursor(0, 1);
@@ -108,7 +112,7 @@ void setup() {
   delay(2000);
   
   client.setServer(mqtt_server, 8883);
-  client.setCallback(mqttCallback); // Set the listener for commands
+  client.setCallback(mqttCallback); 
 }
 
 void loop() {
@@ -137,10 +141,10 @@ void loop() {
   lcd.setCursor(0, 0);
   lcd.print("PPM: "); 
   lcd.print(ppm);
-  lcd.print("     "); // Clear trailing digits
+  lcd.print("     "); 
   lcd.setCursor(0, 1); 
   lcd.print(statusMsg);
-  lcd.print("               "); // Clear trailing text
+  lcd.print("               "); 
 
   // Publish Data
   String dataPayload = "{\"mac\":\"" + deviceMac + "\", \"ppm\":" + String(ppm) + "}";
