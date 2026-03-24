@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Alert, Modal, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import mqtt from 'mqtt';
 import { supabase } from '@/utils/supabase';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useAppTheme, ThemeType } from '@/context/ThemeContext';
@@ -13,6 +14,13 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ThemedText } from '@/components/themed-text';
 
 const { width, height } = Dimensions.get('window');
+
+const MQTT_URL = `wss://${process.env.EXPO_PUBLIC_HIVEMQ_BROKER}:${process.env.EXPO_PUBLIC_HIVEMQ_PORT}/mqtt`;
+const MQTT_OPTIONS = {
+  username: process.env.EXPO_PUBLIC_HIVEMQ_USERNAME,
+  password: process.env.EXPO_PUBLIC_HIVEMQ_PASSWORD,
+  clientId: `hfire_app_${Math.random().toString(16).slice(3)}`,
+};
 
 export default function SettingsScreen() {
   const { theme, setTheme, colorScheme } = useAppTheme();
@@ -31,6 +39,7 @@ export default function SettingsScreen() {
   const [location, setLocation] = useState<{ latitude: number, longitude: number } | null>(null);
   
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [mapRegion, setMapRegion] = useState({
     latitude: 14.5995,
@@ -83,6 +92,54 @@ export default function SettingsScreen() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleResetWiFi = () => {
+    Alert.alert(
+      'Reset Device Wi-Fi',
+      'This will clear the saved Wi-Fi credentials on your H-Fire device. The device will restart and enter Setup Mode. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Reset Now', 
+          style: 'destructive',
+          onPress: performWiFiReset
+        }
+      ]
+    );
+  };
+
+  const performWiFiReset = () => {
+    setResetting(true);
+    const client = mqtt.connect(MQTT_URL, MQTT_OPTIONS);
+
+    const timeout = setTimeout(() => {
+      client.end();
+      setResetting(false);
+      Alert.alert('Timeout', 'Failed to connect to the device. Please ensure it is online.');
+    }, 10000);
+
+    client.on('connect', () => {
+      const configTopic = 'hfire/house1/config';
+      client.publish(configTopic, 'RESET_WIFI', { qos: 1 }, (err) => {
+        clearTimeout(timeout);
+        client.end();
+        setResetting(false);
+        if (err) {
+          Alert.alert('Error', 'Failed to send reset command.');
+        } else {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          Alert.alert('Success', 'Reset command sent. The device should restart into Setup Mode shortly.');
+        }
+      });
+    });
+
+    client.on('error', (err) => {
+      clearTimeout(timeout);
+      client.end();
+      setResetting(false);
+      Alert.alert('Connection Error', 'Could not reach the MQTT broker.');
+    });
   };
 
   const getCurrentLocation = async () => {
@@ -212,6 +269,30 @@ export default function SettingsScreen() {
             <ThemeOption label="Light" value="light" icon="sun.max.fill" />
             <ThemeOption label="Dark" value="dark" icon="moon.fill" />
             <ThemeOption label="Auto" value="auto" icon="waveform.path.ecg" />
+          </View>
+        </View>
+
+        <View style={[styles.section, { backgroundColor: cardBg }]}>
+          <Text style={styles.sectionTitle}>DEVICE MANAGEMENT</Text>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>CONNECTIVITY</Text>
+            <TouchableOpacity 
+              style={[styles.resetBtn, resetting && { opacity: 0.7 }]} 
+              onPress={handleResetWiFi}
+              disabled={resetting}
+            >
+              {resetting ? (
+                <ActivityIndicator size="small" color="#FF5252" />
+              ) : (
+                <>
+                  <IconSymbol name="antenna.radiowaves.left.and.right" size={20} color="#FF5252" />
+                  <Text style={styles.resetBtnText}>Reset Device Wi-Fi</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <Text style={styles.helperText}>
+              Use this if you want to connect your H-Fire device to a different Wi-Fi network.
+            </Text>
           </View>
         </View>
 
@@ -371,6 +452,29 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     marginTop: 8,
+  },
+  resetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#FF5252',
+    marginTop: 5,
+  },
+  resetBtnText: {
+    color: '#FF5252',
+    fontSize: 14,
+    fontWeight: '900',
+    marginLeft: 10,
+  },
+  helperText: {
+    fontSize: 11,
+    color: '#888',
+    marginTop: 10,
+    fontWeight: '600',
+    lineHeight: 16,
   },
   footer: {
     alignItems: 'center',

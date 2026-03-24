@@ -3,9 +3,9 @@
 #include <PubSubClient.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-#include <WiFiManager.h> // Required library: WiFiManager by tzapu
+#include <WiFiManager.h> 
 
-// HiveMQ Credentials (Hardcoded for now, can be moved to WiFiManager parameters later)
+// HiveMQ Credentials
 const char* mqtt_server = "16e51255d95244c2b069b92cf77ebf81.s1.eu.hivemq.cloud";
 const char* mqtt_user = "RheinTigle";
 const char* mqtt_pass = "052105@Rhein";
@@ -13,12 +13,7 @@ const char* mqtt_pass = "052105@Rhein";
 // MQTT Topics
 const char* topic_data = "hfire/house1/data";
 const char* topic_status = "hfire/house1/status";
-
-// Pins & Thresholds
-const int MQ2_PIN = 34;
-const int BUZZER_PIN = 25;
-const int SAFE_LIMIT = 450;
-const int DANGER_LIMIT = 1500;
+const char* topic_config = "hfire/house1/config"; // NEW: Topic for remote commands
 
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
@@ -26,64 +21,68 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 String deviceMac = "";
 
-// Callback function to update LCD when entering Wi-Fi Configuration Mode
+// Callback for incoming MQTT messages (Dynamic Commands)
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  String message;
+  for (int i = 0; i < length; i++) {
+    message += (char)payload[i];
+  }
+
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  Serial.println(message);
+
+  // DYNAMIC WIFI RESET COMMAND
+  if (String(topic) == topic_config && message == "RESET_WIFI") {
+    Serial.println("Remote Reset Triggered...");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Resetting WiFi...");
+    lcd.setCursor(0, 1);
+    lcd.print("Please wait...");
+    
+    delay(2000);
+    WiFiManager wm;
+    wm.resetSettings(); // Wipes saved SSID/Password
+    ESP.restart();      // Reboots into Setup Mode
+  }
+}
+
 void configModeCallback (WiFiManager *myWiFiManager) {
-  Serial.println("Entered Config Mode");
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("WiFi Setup Mode");
   lcd.setCursor(0, 1);
   lcd.print("AP: H-Fire-Setup");
-  Serial.println(WiFi.softAPIP());
-  Serial.println(myWiFiManager->getConfigPortalSSID());
 }
 
 void setup_wifi() {
   WiFiManager wm;
-  
-  // Set the callback for when the device enters AP mode
   wm.setAPCallback(configModeCallback);
-
-  // Set timeout for 3 minutes before restarting if no connection is made
   wm.setConfigPortalTimeout(180);
 
-  // Automatically connect using saved credentials.
-  // If it fails, it starts an Access Point named "H-Fire-Setup"
   if (!wm.autoConnect("H-Fire-Setup")) {
-    Serial.println("Failed to connect and hit timeout");
     lcd.clear();
-    lcd.setCursor(0,0);
     lcd.print("Setup Timeout");
-    lcd.setCursor(0,1);
-    lcd.print("Restarting...");
     delay(3000);
     ESP.restart();
   }
 
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
-
-  // Capture the MAC address for unique identification
   deviceMac = WiFi.macAddress();
-  
-  // HiveMQ Cloud requires SSL/TLS
   espClient.setInsecure(); 
 }
 
 void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
-    // Using the MAC address as the unique Client ID
     if (client.connect(deviceMac.c_str(), mqtt_user, mqtt_pass)) {
       Serial.println("connected");
       client.publish(topic_status, "System Online");
-    } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
       
-      // Update LCD during MQTT failure
+      // IMPORTANT: Subscribe to the config topic for remote reset
+      client.subscribe(topic_config);
+    } else {
       lcd.setCursor(0, 1);
       lcd.print("MQTT Retry...");
       delay(5000);
@@ -98,25 +97,18 @@ void setup() {
   lcd.init();
   lcd.backlight();
   
-  // Starting Status
-  lcd.setCursor(0, 0);
-  lcd.print("H-Fire System");
-  lcd.setCursor(0, 1);
-  lcd.print("Initializing...");
-  delay(1000);
-
   setup_wifi();
   
-  // Show MAC address on boot for device identification
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("ID: ");
-  lcd.print(deviceMac.substring(9)); // Shows the unique end part of the MAC
+  lcd.print(deviceMac.substring(9));
   lcd.setCursor(0, 1);
   lcd.print("System Ready");
-  delay(3000);
+  delay(2000);
   
   client.setServer(mqtt_server, 8883);
+  client.setCallback(mqttCallback); // Set the listener for commands
 }
 
 void loop() {
@@ -128,35 +120,31 @@ void loop() {
   int ppm = analogRead(MQ2_PIN);
   String statusMsg;
 
-  // Logic for Local & Remote Alerting
   if (ppm <= SAFE_LIMIT) {
     statusMsg = "SAFE";
     digitalWrite(BUZZER_PIN, LOW);
-  } 
-  else if (ppm > SAFE_LIMIT && ppm <= DANGER_LIMIT) {
+  } else if (ppm > SAFE_LIMIT && ppm <= DANGER_LIMIT) {
     statusMsg = "WARNING: SMOKE";
-    // Intermittent beep for warning
     digitalWrite(BUZZER_PIN, HIGH); 
     delay(100); 
     digitalWrite(BUZZER_PIN, LOW);
-  } 
-  else {
+  } else {
     statusMsg = "CRITICAL: FIRE/GAS";
-    digitalWrite(BUZZER_PIN, HIGH); // Continuous alarm for danger
+    digitalWrite(BUZZER_PIN, HIGH);
   }
 
-  // Update LCD
-  lcd.clear();
+  // Regular Display
   lcd.setCursor(0, 0);
   lcd.print("PPM: "); 
   lcd.print(ppm);
+  lcd.print("     "); // Clear trailing digits
   lcd.setCursor(0, 1); 
   lcd.print(statusMsg);
+  lcd.print("               "); // Clear trailing text
 
-  // Publish to HiveMQ
+  // Publish Data
   String dataPayload = "{\"mac\":\"" + deviceMac + "\", \"ppm\":" + String(ppm) + "}";
   client.publish(topic_data, dataPayload.c_str());
-  client.publish(topic_status, statusMsg.c_str());
 
-  delay(2000); // 2-second reporting interval
+  delay(2000);
 }
