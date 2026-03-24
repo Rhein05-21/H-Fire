@@ -26,72 +26,41 @@ PubSubClient client(espClient);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 String deviceMac = "";
+unsigned long lastMqttRetry = 0;
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   String message;
   for (int i = 0; i < length; i++) message += (char)payload[i];
-
   if (String(topic) == topic_config && message == "RESET_WIFI") {
-    lcd.clear();
-    lcd.print("Resetting WiFi...");
-    delay(2000);
     WiFiManager wm;
     wm.resetSettings(); 
     ESP.restart();      
   }
 }
 
-void configModeCallback (WiFiManager *myWiFiManager) {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("WiFi Setup Mode");
-  lcd.setCursor(0, 1);
-  lcd.print("AP: H-Fire-Setup");
-}
-
 void setup_wifi() {
   WiFiManager wm;
-  wm.setAPCallback(configModeCallback);
   wm.setConnectTimeout(30);
-  wm.setConfigPortalTimeout(180);
-
-  if (!wm.autoConnect("H-Fire-Setup")) {
-    lcd.clear();
-    lcd.print("Setup Timeout");
-    delay(3000);
-    ESP.restart();
-  }
-
+  wm.autoConnect("H-Fire-Setup");
   deviceMac = WiFi.macAddress();
   espClient.setInsecure(); 
 }
 
-void reconnect() {
-  while (!client.connected()) {
-    // 1. Check if WiFi is still alive
-    if (WiFi.status() != WL_CONNECTED) {
-      lcd.setCursor(0, 1);
-      lcd.print("WiFi Lost!      "); // Clear line with spaces
-      delay(2000);
-      ESP.restart(); // Trigger Hotspot via restart
-    }
+void tryReconnect() {
+  // Only try to reconnect every 5 seconds to avoid blocking the sensor
+  if (millis() - lastMqttRetry > 5000) {
+    lastMqttRetry = millis();
+    
+    if (WiFi.status() != WL_CONNECTED) return; // Wait for WiFi first
 
-    // 2. Try MQTT Connection
-    Serial.print("Attempting MQTT connection...");
+    lcd.setCursor(0, 1);
+    lcd.print("MQTT Retry...   ");
+    
     if (client.connect(deviceMac.c_str(), mqtt_user, mqtt_pass)) {
-      Serial.println("connected");
       client.subscribe(topic_config);
       client.publish(topic_status, "System Online");
-      
-      // Clear the "Retry" message from line 2
       lcd.setCursor(0, 1);
       lcd.print("Connected!      ");
-      delay(1000);
-    } else {
-      // Show Retry on Line 2, but keep Line 1 (PPM) visible
-      lcd.setCursor(0, 1);
-      lcd.print("MQTT Retry...   "); // 16 characters to clear line
-      delay(5000);
     }
   }
 }
@@ -101,37 +70,26 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   lcd.init();
   lcd.backlight();
-  
-  lcd.setCursor(0,0);
-  lcd.print("H-Fire Booting..");
   setup_wifi();
-  
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("ID: ");
-  lcd.print(deviceMac.substring(9));
-  lcd.setCursor(0, 1);
-  lcd.print("System Ready");
-  delay(2000);
-  
   client.setServer(mqtt_server, 8883);
   client.setCallback(mqttCallback); 
 }
 
 void loop() {
-  // If WiFi breaks, restart immediately to open hotspot
+  // 1. Monitor WiFi (Always Restart if lost)
   if (WiFi.status() != WL_CONNECTED) {
-    lcd.setCursor(0, 1);
-    lcd.print("WiFi Lost!      ");
-    delay(2000);
+    digitalWrite(BUZZER_PIN, LOW); // Silence buzzer during restart
     ESP.restart();
   }
 
+  // 2. Monitor MQTT (NON-BLOCKING)
   if (!client.connected()) {
-    reconnect();
+    tryReconnect();
+  } else {
+    client.loop();
   }
-  client.loop();
 
+  // 3. SENSOR & ALARM LOGIC (ALWAYS RUNS)
   int ppm = analogRead(MQ2_PIN);
   String statusMsg;
 
@@ -145,22 +103,25 @@ void loop() {
     digitalWrite(BUZZER_PIN, LOW);
   } else {
     statusMsg = "CRITICAL: FIRE  ";
-    digitalWrite(BUZZER_PIN, HIGH);
+    digitalWrite(BUZZER_PIN, HIGH); // Continuous
   }
 
-  // Row 1: PPM (Always visible)
+  // 4. DISPLAY UPDATE (ALWAYS RUNS)
   lcd.setCursor(0, 0);
   lcd.print("PPM: "); 
   lcd.print(ppm);
-  lcd.print("     "); // Clear trailing numbers
+  lcd.print("     "); 
 
-  // Row 2: Status
-  lcd.setCursor(0, 1); 
-  lcd.print(statusMsg);
+  // Only show status on Line 2 if MQTT is connected
+  // Otherwise, tryReconnect() will show "MQTT Retry..."
+  if (client.connected()) {
+    lcd.setCursor(0, 1); 
+    lcd.print(statusMsg);
+    
+    // Publish only if connected
+    String dataPayload = "{\"mac\":\"" + deviceMac + "\", \"ppm\":" + String(ppm) + "}";
+    client.publish(topic_data, dataPayload.c_str());
+  }
 
-  // Data Publish
-  String dataPayload = "{\"mac\":\"" + deviceMac + "\", \"ppm\":" + String(ppm) + "}";
-  client.publish(topic_data, dataPayload.c_str());
-
-  delay(2000);
+  delay(500); // Faster loop for more responsive buzzer
 }
