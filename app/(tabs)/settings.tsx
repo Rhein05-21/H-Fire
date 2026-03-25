@@ -1,52 +1,50 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Alert, Modal, Dimensions } from 'react-native';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Alert, Modal, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
-import mqtt from 'mqtt';
 import { supabase } from '@/utils/supabase';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { useAppTheme, ThemeType } from '@/context/ThemeContext';
+import { useAppTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ThemedText } from '@/components/themed-text';
 
 const { width, height } = Dimensions.get('window');
+const HOA_PIN = '1111';
+const SYSTEM_ADMIN_PIN = '2222';
 
-const MQTT_URL = `wss://${process.env.EXPO_PUBLIC_HIVEMQ_BROKER}:${process.env.EXPO_PUBLIC_HIVEMQ_PORT}/mqtt`;
-const MQTT_OPTIONS = {
-  username: process.env.EXPO_PUBLIC_HIVEMQ_USERNAME,
-  password: process.env.EXPO_PUBLIC_HIVEMQ_PASSWORD,
-  clientId: `hfire_app_${Math.random().toString(16).slice(3)}`,
-};
+type SettingsTab = 'PROFILE' | 'DEVICE' | 'ADMIN';
 
 export default function SettingsScreen() {
-  const { theme, setTheme, colorScheme } = useAppTheme();
-  const { userDetails, setUserDetails, profileId, loading } = useUser();
+  const router = useRouter();
+  const { theme, setTheme } = useAppTheme();
+  const { userDetails, setUserDetails, profileId, isAdmin, devices: globalDevices, allHeardDevices, refreshProfile } = useUser();
   
-  // Theme Colors
   const backgroundColor = useThemeColor({}, 'background');
   const textColor = useThemeColor({}, 'text');
-  const cardBg = useThemeColor({ light: '#fff', dark: '#1e1e1e' }, 'background');
-  const inputBg = useThemeColor({ light: '#f8f9fa', dark: '#2a2a2a' }, 'background');
-  const borderColor = useThemeColor({ light: '#eee', dark: '#333' }, 'background');
-  const secondaryText = useThemeColor({ light: '#666', dark: '#aaa' }, 'text');
+  const cardBg = useThemeColor({ light: '#fff', dark: '#1c1c1e' }, 'background');
+  const inputBg = useThemeColor({ light: '#f2f2f7', dark: '#2c2c2e' }, 'background');
+  const borderColor = useThemeColor({ light: '#e5e5ea', dark: '#3a3a3c' }, 'background');
+  const secondaryText = useThemeColor({ light: '#8e8e93', dark: '#8e8e93' }, 'text');
 
+  const [activeTab, setActiveTab] = useState<SettingsTab>('PROFILE');
   const [name, setName] = useState('');
   const [community, setCommunity] = useState('');
   const [location, setLocation] = useState<{ latitude: number, longitude: number } | null>(null);
-  
   const [saving, setSaving] = useState(false);
-  const [resetting, setResetting] = useState(false);
+  const [unlinking, setUnlinking] = useState<string | null>(null);
+  
+  // Device Discovery
+  const [isScanning, setIsScanning] = useState(false);
+  const [availableDevices, setAvailableDevices] = useState<any[]>([]);
+
   const [showMap, setShowMap] = useState(false);
-  const [mapRegion, setMapRegion] = useState({
-    latitude: 14.5995,
-    longitude: 120.9842,
-    latitudeDelta: 0.01,
-    longitudeDelta: 0.01,
-  });
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [attempts, setAttempts] = useState(0);
 
   useEffect(() => {
     if (userDetails) {
@@ -54,299 +52,240 @@ export default function SettingsScreen() {
       setCommunity(userDetails.community || '');
       if (userDetails.latitude && userDetails.longitude) {
         setLocation({ latitude: userDetails.latitude, longitude: userDetails.longitude });
-        setMapRegion({
-          ...mapRegion,
-          latitude: userDetails.latitude,
-          longitude: userDetails.longitude,
-        });
       }
     }
   }, [userDetails]);
 
-  const handleSave = async () => {
-    if (!name.trim()) {
-      Alert.alert('Error', 'Name is required.');
-      return;
-    }
+  const myLinkedDevices = useMemo(() => {
+    return Object.values(globalDevices);
+  }, [globalDevices]);
 
+  const scanForDevices = async () => {
+    setIsScanning(true);
+    setAvailableDevices([]);
+    
+    // Simulate scan duration
+    setTimeout(async () => {
+      // Find devices from the "Air" (MQTT) that have NO owner linked in Supabase
+      const unowned = Object.values(allHeardDevices).filter(d => !d.profile_id);
+      
+      setAvailableDevices(unowned);
+      setIsScanning(false);
+      
+      if (unowned.length === 0) {
+        Alert.alert('None Found', 'No unlinked H-Fire devices were detected in the air. Ensure your ESP32 is powered on.');
+      }
+    }, 3000);
+  };
+
+  const linkDevice = async (mac: string) => {
+    try {
+      const { error } = await supabase
+        .from('devices')
+        .update({ profile_id: profileId })
+        .eq('mac', mac);
+      
+      if (error) throw error;
+      
+      await refreshProfile(); // 🔥 FORCE REFRESH
+      setAvailableDevices(prev => prev.filter(d => d.mac !== mac));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Device Linked!', 'You can now monitor this device from your Dashboard.');
+    } catch (e) {
+      Alert.alert('Error', 'Failed to claim device.');
+    }
+  };
+
+  const handleUnlink = (mac: string, label: string) => {
+    Alert.alert('Unlink Device', `Disconnect from ${label}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { 
+        text: 'Unlink', style: 'destructive',
+        onPress: async () => {
+          setUnlinking(mac);
+          try {
+            await supabase.from('devices').update({ profile_id: null }).eq('mac', mac);
+            await refreshProfile(); // 🔥 FORCE REFRESH
+            
+            const stored = await AsyncStorage.getItem('HFIRE_DEVICE_LABELS');
+            if (stored) {
+              const labels = JSON.parse(stored);
+              delete labels[mac];
+              await AsyncStorage.setItem('HFIRE_DEVICE_LABELS', JSON.stringify(labels));
+            }
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          } catch (e) { Alert.alert('Error', 'Could not unlink.'); }
+          finally { setUnlinking(null); }
+        }
+      }
+    ]);
+  };
+
+  const handleSave = async () => {
+    if (!name.trim()) return Alert.alert('Error', 'Name is required.');
     setSaving(true);
     try {
-      const details = { 
-        name, 
-        community,
-        latitude: location?.latitude,
-        longitude: location?.longitude
-      };
-      
-      const { error } = await supabase
-        .from('profiles')
-        .upsert({ id: profileId, ...details });
-
-      if (error) throw error;
-
-      await setUserDetails(details);
+      const details = { name, community, latitude: location?.latitude, longitude: location?.longitude };
+      await supabase.from('profiles').upsert({ id: profileId, ...details });
+      await setUserDetails({ ...userDetails!, ...details });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Success', 'Profile updated successfully.');
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to save profile.');
-    } finally {
-      setSaving(false);
+      Alert.alert('Success', 'Profile updated.');
+    } catch (err) { Alert.alert('Error', 'Failed to save.'); }
+    finally { setSaving(false); }
+  };
+
+  const verifyPin = async () => {
+    if (pinInput === HOA_PIN || pinInput === SYSTEM_ADMIN_PIN) {
+      await supabase.from('profiles').update({ is_admin: true }).eq('id', profileId);
+      await setUserDetails({ ...userDetails!, is_admin: true });
+      setShowPinModal(false); setPinInput(''); setAttempts(0);
+      router.push('/(admin)/dashboard');
+    } else {
+      const newAttempts = attempts + 1;
+      setAttempts(newAttempts);
+      setPinInput('');
+      if (newAttempts >= 5) Alert.alert('Access Denied', 'Ask System Administrator.');
+      else Alert.alert('Wrong PIN', `Attempt ${newAttempts}/5`);
     }
   };
 
-  const handleResetWiFi = () => {
-    Alert.alert(
-      'Reset Device Wi-Fi',
-      'This will clear the saved Wi-Fi credentials on your H-Fire device. The device will restart and enter Setup Mode. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Reset Now', 
-          style: 'destructive',
-          onPress: performWiFiReset
-        }
-      ]
-    );
-  };
-
-  const performWiFiReset = () => {
-    setResetting(true);
-    const client = mqtt.connect(MQTT_URL, MQTT_OPTIONS);
-
-    const timeout = setTimeout(() => {
-      client.end();
-      setResetting(false);
-      Alert.alert('Timeout', 'Failed to connect to the device. Please ensure it is online.');
-    }, 10000);
-
-    client.on('connect', () => {
-      const configTopic = 'hfire/house1/config';
-      client.publish(configTopic, 'RESET_WIFI', { qos: 1 }, (err) => {
-        clearTimeout(timeout);
-        client.end();
-        setResetting(false);
-        if (err) {
-          Alert.alert('Error', 'Failed to send reset command.');
-        } else {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          Alert.alert('Success', 'Reset command sent. The device should restart into Setup Mode shortly.');
-        }
-      });
-    });
-
-    client.on('error', (err) => {
-      clearTimeout(timeout);
-      client.end();
-      setResetting(false);
-      Alert.alert('Connection Error', 'Could not reach the MQTT broker.');
-    });
-  };
-
-  const getCurrentLocation = async () => {
-    let { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Denied', 'Allow location access to find your current position.');
-      return;
-    }
-
-    let current = await Location.getCurrentPositionAsync({});
-    const newCoords = {
-      latitude: current.coords.latitude,
-      longitude: current.coords.longitude,
-    };
-    setLocation(newCoords);
-    setMapRegion({
-      ...mapRegion,
-      ...newCoords,
-    });
-  };
-
-  const ThemeOption = ({ label, value, icon }: { label: string, value: ThemeType, icon: any }) => (
+  const TabButton = ({ title, tab }: { title: string, tab: SettingsTab }) => (
     <TouchableOpacity 
-      style={[
-        styles.themeOption, 
-        { backgroundColor: inputBg, borderColor: theme === value ? '#2196F3' : borderColor },
-        theme === value && { borderWidth: 2 }
-      ]}
-      onPress={() => {
-        setTheme(value);
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      }}
+      style={[styles.tabButton, activeTab === tab && { borderBottomColor: '#2196F3', borderBottomWidth: 3 }]}
+      onPress={() => { setActiveTab(tab); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
     >
-      <IconSymbol name={icon} size={24} color={theme === value ? '#2196F3' : textColor} />
-      <Text style={[styles.themeOptionText, { color: theme === value ? '#2196F3' : textColor }]}>{label}</Text>
+      <Text style={[styles.tabText, { color: activeTab === tab ? '#2196F3' : secondaryText }]}>{title}</Text>
     </TouchableOpacity>
   );
 
-  if (loading) {
-    return (
-      <View style={[styles.loadingContainer, { backgroundColor }]}>
-        <ActivityIndicator size="large" color="#2196F3" />
-      </View>
-    );
-  }
-
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.header}>
-          <ThemedText type="title" style={styles.title}>Settings</ThemedText>
-          <Text style={styles.subtitle}>Personalize your H-Fire experience</Text>
-        </View>
+    <SafeAreaView style={[styles.container, { backgroundColor }]} edges={['top']}>
+      <View style={styles.header}>
+        <ThemedText type="title" style={styles.title}>Settings</ThemedText>
+      </View>
 
-        <View style={[styles.section, { backgroundColor: cardBg }]}>
-          <Text style={styles.sectionTitle}>PROFILE INFORMATION</Text>
-          
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>YOUR NAME</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: inputBg, color: textColor, borderColor }]}
-              value={name}
-              onChangeText={setName}
-              placeholder="Enter your name"
-              placeholderTextColor="#999"
-            />
-          </View>
+      <View style={styles.tabContainer}>
+        <TabButton title="Profile" tab="PROFILE" />
+        <TabButton title="Device" tab="DEVICE" />
+        <TabButton title="Security" tab="ADMIN" />
+      </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>BLOCK / COMMUNITY</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: inputBg, color: textColor, borderColor }]}
-              value={community}
-              onChangeText={setCommunity}
-              placeholder="e.g. Phase 1 Block 5"
-              placeholderTextColor="#999"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <Text style={styles.inputLabel}>HOME LOCATION</Text>
-              <TouchableOpacity onPress={() => setShowMap(true)}>
-                <Text style={{ color: '#2196F3', fontSize: 12, fontWeight: '800' }}>OPEN MAP</Text>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {activeTab === 'PROFILE' && (
+          <View style={styles.fadeAnim}>
+            <View style={[styles.section, { backgroundColor: cardBg }]}>
+              <Text style={styles.sectionLabel}>PERSONAL INFORMATION</Text>
+              <TextInput style={[styles.input, { backgroundColor: inputBg, color: textColor }]} value={name} onChangeText={setName} placeholder="Your Name" placeholderTextColor="#999" />
+              <TextInput style={[styles.input, { backgroundColor: inputBg, color: textColor }]} value={community} onChangeText={setCommunity} placeholder="Community / Block" placeholderTextColor="#999" />
+              <TouchableOpacity style={[styles.locBtn, { backgroundColor: inputBg }]} onPress={() => setShowMap(true)}>
+                <IconSymbol name="map.fill" size={18} color="#2196F3" /><Text style={[styles.locBtnText, { color: textColor }]}>{location ? 'Change Location' : 'Set Home Location'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save Changes</Text>}
               </TouchableOpacity>
             </View>
-            
-            {location ? (
-              <View style={[styles.locationPreview, { backgroundColor: inputBg, borderColor }]}>
-                <IconSymbol name="house.fill" size={20} color="#2196F3" />
-                <View style={{ marginLeft: 12 }}>
-                  <Text style={[styles.locationCoords, { color: textColor }]}>
-                    {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
-                  </Text>
-                  <Text style={styles.locationSub}>Saved Coordinates</Text>
-                </View>
+            <View style={[styles.section, { backgroundColor: cardBg }]}>
+              <Text style={styles.sectionLabel}>THEME</Text>
+              <View style={styles.themeRow}>
+                {['light', 'dark', 'auto'].map((t) => (
+                  <TouchableOpacity key={t} style={[styles.themeChip, { backgroundColor: theme === t ? '#2196F3' : inputBg }]} onPress={() => setTheme(t as any)}><Text style={[styles.themeChipText, { color: theme === t ? '#fff' : textColor }]}>{t.toUpperCase()}</Text></TouchableOpacity>
+                ))}
               </View>
-            ) : (
+            </View>
+          </View>
+        )}
+
+        {activeTab === 'DEVICE' && (
+          <View style={styles.fadeAnim}>
+            <View style={[styles.section, { backgroundColor: cardBg }]}>
+              <Text style={styles.sectionLabel}>CONNECTED HARDWARE</Text>
+              {myLinkedDevices.length > 0 ? myLinkedDevices.map((dev) => (
+                <View key={dev.mac} style={[styles.deviceRow, { backgroundColor: inputBg }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.deviceRowLabel, { color: textColor }]}>{dev.label}</Text>
+                    <Text style={styles.deviceRowMac}>{dev.mac}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.unlinkBtn} onPress={() => handleUnlink(dev.mac, dev.label)}>
+                    {unlinking === dev.mac ? <ActivityIndicator size="small" color="#FF3B30" /> : <Text style={styles.unlinkText}>UNLINK</Text>}
+                  </TouchableOpacity>
+                </View>
+              )) : (
+                <Text style={{ color: secondaryText, textAlign: 'center', marginVertical: 10 }}>No devices currently linked.</Text>
+              )}
+            </View>
+
+            <View style={[styles.section, { backgroundColor: cardBg }]}>
+              <Text style={styles.sectionLabel}>DEVICE DISCOVERY</Text>
               <TouchableOpacity 
-                style={[styles.locationPlaceholder, { backgroundColor: inputBg, borderStyle: 'dashed', borderColor }]}
-                onPress={() => setShowMap(true)}
+                style={[styles.scanBtn, { borderColor: '#2196F3' }]} 
+                onPress={scanForDevices}
+                disabled={isScanning}
               >
-                <IconSymbol name="paperplane.fill" size={20} color="#aaa" />
-                <Text style={styles.locationPlaceholderText}>Tap to set your location</Text>
+                {isScanning ? <ActivityIndicator color="#2196F3" /> : (
+                  <>
+                    <IconSymbol name="magnifyingglass" size={18} color="#2196F3" />
+                    <Text style={styles.scanBtnText}>Scan for New Device</Text>
+                  </>
+                )}
               </TouchableOpacity>
-            )}
+
+              {availableDevices.length > 0 && (
+                <View style={{ marginTop: 20 }}>
+                  <Text style={styles.foundTitle}>Available Devices Nearby:</Text>
+                  {availableDevices.map(dev => (
+                    <TouchableOpacity key={dev.mac} style={[styles.foundItem, { backgroundColor: inputBg }]} onPress={() => linkDevice(dev.mac)}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.foundMac, { color: textColor }]}>{dev.mac}</Text>
+                        <Text style={styles.foundHouse}>Topic: {dev.house_name}</Text>
+                      </View>
+                      <IconSymbol name="plus.circle.fill" size={24} color="#34C759" />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
           </View>
+        )}
 
-          <TouchableOpacity 
-            style={[styles.saveBtn, saving && { opacity: 0.7 }]} 
-            onPress={handleSave}
-            disabled={saving}
-          >
-            {saving ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Text style={styles.saveBtnText}>Update Profile</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        <View style={[styles.section, { backgroundColor: cardBg }]}>
-          <Text style={styles.sectionTitle}>APPEARANCE</Text>
-          <Text style={[styles.inputLabel, { marginBottom: 15 }]}>THEME PREFERENCE</Text>
-          
-          <View style={styles.themeContainer}>
-            <ThemeOption label="Light" value="light" icon="sun.max.fill" />
-            <ThemeOption label="Dark" value="dark" icon="moon.fill" />
-            <ThemeOption label="Auto" value="auto" icon="waveform.path.ecg" />
-          </View>
-        </View>
-
-        <View style={[styles.section, { backgroundColor: cardBg }]}>
-          <Text style={styles.sectionTitle}>DEVICE MANAGEMENT</Text>
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>CONNECTIVITY</Text>
-            <TouchableOpacity 
-              style={[styles.resetBtn, resetting && { opacity: 0.7 }]} 
-              onPress={handleResetWiFi}
-              disabled={resetting}
-            >
-              {resetting ? (
-                <ActivityIndicator size="small" color="#FF5252" />
+        {activeTab === 'ADMIN' && (
+          <View style={styles.fadeAnim}>
+            <View style={[styles.section, { backgroundColor: cardBg }]}>
+              <Text style={styles.sectionLabel}>ADMINISTRATOR</Text>
+              {!isAdmin ? (
+                <TouchableOpacity style={styles.adminEntryBtn} onPress={() => setShowPinModal(true)}>
+                  <IconSymbol name="lock.fill" size={18} color="#fff" />
+                  <Text style={styles.adminEntryText}>Unlock Admin</Text>
+                </TouchableOpacity>
               ) : (
                 <>
-                  <IconSymbol name="antenna.radiowaves.left.and.right" size={20} color="#FF5252" />
-                  <Text style={styles.resetBtnText}>Reset Device Wi-Fi</Text>
+                  <TouchableOpacity style={styles.adminEntryBtn} onPress={() => router.push('/(admin)/dashboard')}>
+                    <IconSymbol name="chart.bar.fill" size={18} color="#fff" />
+                    <Text style={styles.adminEntryText}>Open Monitor</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.adminEntryBtn, { backgroundColor: '#8E8E93', marginTop: 10 }]} onPress={async () => {
+                    await supabase.from('profiles').update({ is_admin: false }).eq('id', profileId);
+                    await setUserDetails({ ...userDetails!, is_admin: false });
+                  }}><Text style={styles.adminEntryText}>Exit Admin</Text></TouchableOpacity>
                 </>
               )}
-            </TouchableOpacity>
-            <Text style={styles.helperText}>
-              Use this if you want to connect your H-Fire device to a different Wi-Fi network.
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.versionText}>H-Fire Version 1.0.0</Text>
-        </View>
-      </ScrollView>
-
-      {/* Map Modal */}
-      <Modal visible={showMap} animationType="slide">
-        <View style={[styles.mapContainer, { backgroundColor }]}>
-          <MapView
-            provider={PROVIDER_GOOGLE}
-            style={styles.map}
-            region={mapRegion}
-            onRegionChangeComplete={setMapRegion}
-            onPress={(e) => setLocation(e.nativeEvent.coordinate)}
-            userInterfaceStyle={colorScheme}
-          >
-            {location && (
-              <Marker 
-                coordinate={location} 
-                title="Your Home"
-                description="H-Fire Protected"
-              />
-            )}
-          </MapView>
-
-          <View style={styles.mapHeader}>
-            <TouchableOpacity 
-              style={styles.mapCloseBtn} 
-              onPress={() => setShowMap(false)}
-            >
-              <IconSymbol name="xmark.circle.fill" size={32} color="#000" />
-            </TouchableOpacity>
-            <View style={styles.mapTip}>
-              <Text style={styles.mapTipText}>Tap anywhere to set your home location</Text>
             </View>
           </View>
+        )}
+      </ScrollView>
 
-          <View style={styles.mapFooter}>
-            <TouchableOpacity style={styles.currentLocBtn} onPress={getCurrentLocation}>
-              <IconSymbol name="paperplane.fill" size={20} color="#2196F3" />
-              <Text style={styles.currentLocText}>Use Current Location</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.confirmLocBtn, !location && { opacity: 0.5 }]} 
-              onPress={() => setShowMap(false)}
-              disabled={!location}
-            >
-              <Text style={styles.confirmLocText}>Confirm Location</Text>
-            </TouchableOpacity>
-          </View>
+      {/* PIN MODAL placeholder (kept from previous code) */}
+      <Modal visible={showPinModal} animationType="fade" transparent>
+        <View style={styles.pinOverlay}>
+          <KeyboardAvoidingView behavior="padding" style={styles.pinContent}>
+            <View style={[styles.pinCard, { backgroundColor: cardBg }]}>
+              <Text style={[styles.pinTitle, { color: textColor }]}>Security PIN</Text>
+              <TextInput style={[styles.pinInput, { backgroundColor: inputBg, color: textColor }]} value={pinInput} onChangeText={setPinInput} keyboardType="number-pad" maxLength={4} secureTextEntry autoFocus />
+              <View style={styles.pinActions}>
+                <TouchableOpacity onPress={() => setShowPinModal(false)}><Text style={{ color: secondaryText, fontWeight: '700' }}>Cancel</Text></TouchableOpacity>
+                <TouchableOpacity onPress={verifyPin} style={styles.pinVerify}><Text style={{ color: '#fff', fontWeight: '900' }}>Verify</Text></TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </SafeAreaView>
@@ -354,199 +293,45 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  scrollContent: { padding: 20, paddingBottom: 100 },
-  header: { marginBottom: 30, marginTop: 10 },
-  title: { fontSize: 32, fontWeight: '900' },
-  subtitle: { fontSize: 14, color: '#888', fontWeight: '700', marginTop: 4 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  section: {
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 20,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#2196F3',
-    letterSpacing: 1.5,
-    marginBottom: 20,
-  },
-  inputGroup: { marginBottom: 20 },
-  inputLabel: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: '#888',
-    marginBottom: 8,
-    letterSpacing: 1,
-  },
-  input: {
-    borderRadius: 16,
-    padding: 16,
-    fontSize: 16,
-    borderWidth: 1,
-    fontWeight: '600',
-  },
-  locationPreview: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  locationCoords: {
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  locationSub: {
-    fontSize: 11,
-    color: '#999',
-    fontWeight: '600',
-  },
-  locationPlaceholder: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  locationPlaceholderText: {
-    color: '#aaa',
-    fontSize: 14,
-    fontWeight: '700',
-    marginLeft: 10,
-  },
-  saveBtn: {
-    backgroundColor: '#2196F3',
-    borderRadius: 16,
-    padding: 18,
-    alignItems: 'center',
-    marginTop: 10,
-    elevation: 4,
-  },
-  saveBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  themeContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  themeOption: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    borderRadius: 16,
-    marginHorizontal: 5,
-    borderWidth: 1,
-  },
-  themeOptionText: {
-    fontSize: 12,
-    fontWeight: '900',
-    marginTop: 8,
-  },
-  resetBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: '#FF5252',
-    marginTop: 5,
-  },
-  resetBtnText: {
-    color: '#FF5252',
-    fontSize: 14,
-    fontWeight: '900',
-    marginLeft: 10,
-  },
-  helperText: {
-    fontSize: 11,
-    color: '#888',
-    marginTop: 10,
-    fontWeight: '600',
-    lineHeight: 16,
-  },
-  footer: {
-    alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 40,
-  },
-  versionText: {
-    fontSize: 12,
-    color: '#aaa',
-    fontWeight: '700',
-  },
-  // Map Styles
-  mapContainer: { flex: 1 },
-  map: { flex: 1 },
-  mapHeader: {
-    position: 'absolute',
-    top: 50,
-    left: 20,
-    right: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  mapCloseBtn: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    elevation: 10,
-  },
-  mapTip: {
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginLeft: 15,
-    flex: 1,
-  },
-  mapTipText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  mapFooter: {
-    position: 'absolute',
-    bottom: 40,
-    left: 20,
-    right: 20,
-  },
-  currentLocBtn: {
-    backgroundColor: '#fff',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 15,
-    borderRadius: 16,
-    marginBottom: 15,
-    elevation: 10,
-  },
-  currentLocText: {
-    color: '#2196F3',
-    fontWeight: '900',
-    marginLeft: 10,
-  },
-  confirmLocBtn: {
-    backgroundColor: '#2196F3',
-    padding: 20,
-    borderRadius: 16,
-    alignItems: 'center',
-    elevation: 10,
-  },
-  confirmLocText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '900',
-  },
+  container: { flex: 1 },
+  header: { paddingHorizontal: 25, paddingTop: 20 },
+  title: { fontSize: 34, fontWeight: '900' },
+  tabContainer: { flexDirection: 'row', paddingHorizontal: 25, marginTop: 20, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.05)' },
+  tabButton: { paddingVertical: 12, marginRight: 25 },
+  tabText: { fontSize: 15, fontWeight: '800' },
+  scrollContent: { padding: 20, paddingTop: 25 },
+  fadeAnim: { flex: 1 },
+  section: { borderRadius: 20, padding: 20, marginBottom: 20, ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10 }, android: { elevation: 2 } }) },
+  sectionLabel: { fontSize: 11, fontWeight: '900', color: '#8e8e93', marginBottom: 15, letterSpacing: 1 },
+  input: { borderRadius: 12, padding: 16, fontSize: 16, marginBottom: 12, fontWeight: '600' },
+  locBtn: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 12, marginBottom: 20 },
+  locBtnText: { marginLeft: 10, fontWeight: '700', fontSize: 15 },
+  saveBtn: { backgroundColor: '#2196F3', padding: 18, borderRadius: 15, alignItems: 'center' },
+  saveBtnText: { color: '#fff', fontWeight: '900', fontSize: 16 },
+  themeRow: { flexDirection: 'row', gap: 10 },
+  themeChip: { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
+  themeChipText: { fontSize: 10, fontWeight: '900' },
+  deviceRow: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 12, marginBottom: 10 },
+  deviceRowLabel: { fontSize: 15, fontWeight: '800' },
+  deviceRowMac: { fontSize: 10, color: '#8e8e93', fontWeight: '600', marginTop: 2 },
+  unlinkBtn: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#FF3B30' },
+  unlinkText: { color: '#FF3B30', fontSize: 10, fontWeight: '900' },
+  scanBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 18, borderRadius: 15, borderWeight: 2, borderStyle: 'dashed', borderWidth: 2 },
+  scanBtnText: { color: '#2196F3', fontWeight: '900', fontSize: 15, marginLeft: 10 },
+  foundTitle: { fontSize: 12, fontWeight: '800', color: '#8e8e93', marginBottom: 10 },
+  foundItem: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 12, marginBottom: 10 },
+  foundMac: { fontSize: 14, fontWeight: '800' },
+  foundHouse: { fontSize: 10, color: '#8e8e93', marginTop: 2 },
+  adminEntryBtn: { backgroundColor: '#1a1a1a', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 18, borderRadius: 15 },
+  adminEntryText: { color: '#fff', fontWeight: '900', fontSize: 15, marginLeft: 10 },
+  idBox: { padding: 15, borderRadius: 12 },
+  idText: { fontSize: 13, fontWeight: '800', textAlign: 'center' },
+  helperText: { fontSize: 11, color: '#8e8e93', marginTop: 10, textAlign: 'center' },
+  pinOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)' },
+  pinContent: { width: width * 0.8 },
+  pinCard: { padding: 30, borderRadius: 25, alignItems: 'center' },
+  pinTitle: { fontSize: 20, fontWeight: '900', marginBottom: 20 },
+  pinInput: { width: '100%', padding: 20, borderRadius: 15, fontSize: 32, textAlign: 'center', fontWeight: '900', letterSpacing: 10 },
+  pinActions: { flexDirection: 'row', width: '100%', justifyContent: 'space-between', alignItems: 'center', marginTop: 25 },
+  pinVerify: { backgroundColor: '#2196F3', paddingHorizontal: 25, paddingVertical: 12, borderRadius: 12 }
 });

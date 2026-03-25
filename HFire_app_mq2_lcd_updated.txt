@@ -3,21 +3,23 @@
 #include <PubSubClient.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-#include <WiFiManager.h> 
+#include <WiFiManager.h> 
 
-// HiveMQ Credentials
+// --- HiveMQ Credentials ---
 const char* mqtt_server = "16e51255d95244c2b069b92cf77ebf81.s1.eu.hivemq.cloud";
 const char* mqtt_user = "RheinTigle";
 const char* mqtt_pass = "052105@Rhein";
 
-// MQTT Topics
+// --- MQTT Topics ---
 const char* topic_data = "hfire/house1/data";
 const char* topic_status = "hfire/house1/status";
-const char* topic_config = "hfire/house1/config"; 
 
-// Pins & Thresholds
+// --- Pins ---
 const int MQ2_PIN = 34;
 const int BUZZER_PIN = 25;
+const int BOOT_BUTTON = 0; // The built-in "BOOT" button on most ESP32s
+
+// --- Thresholds ---
 const int SAFE_LIMIT = 450;
 const int DANGER_LIMIT = 1500;
 
@@ -26,102 +28,149 @@ PubSubClient client(espClient);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 String deviceMac = "";
-unsigned long lastMqttRetry = 0;
 
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  String message;
-  for (int i = 0; i < length; i++) message += (char)payload[i];
-  if (String(topic) == topic_config && message == "RESET_WIFI") {
-    WiFiManager wm;
-    wm.resetSettings(); 
-    ESP.restart();      
-  }
+// Callback for WiFi Setup Mode
+void configModeCallback (WiFiManager *myWiFiManager) {
+  Serial.println("Entered Config Mode");
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("WiFi Setup Mode");
+  lcd.setCursor(0, 1);
+  lcd.print("AP: H-Fire-Setup");
 }
 
 void setup_wifi() {
-  WiFiManager wm;
-  wm.setConnectTimeout(30);
-  wm.autoConnect("H-Fire-Setup");
-  deviceMac = WiFi.macAddress();
-  espClient.setInsecure(); 
+  WiFiManager wm;
+  wm.setAPCallback(configModeCallback);
+  wm.setConfigPortalTimeout(180);
+
+  // Attempts to connect to saved WiFi. If it fails, starts "H-Fire-Setup"
+  if (!wm.autoConnect("H-Fire-Setup")) {
+    Serial.println("Failed to connect / Timeout");
+    lcd.clear();
+    lcd.print("Setup Timeout");
+    delay(3000);
+    ESP.restart();
+  }
+
+  Serial.println("WiFi connected");
+  deviceMac = WiFi.macAddress();
+  espClient.setInsecure(); 
 }
 
-void tryReconnect() {
-  // Only try to reconnect every 5 seconds to avoid blocking the sensor
-  if (millis() - lastMqttRetry > 5000) {
-    lastMqttRetry = millis();
-    
-    if (WiFi.status() != WL_CONNECTED) return; // Wait for WiFi first
+void reconnect() {
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // Check BOOT button even during reconnection loops
+    if (digitalRead(BOOT_BUTTON) == LOW) return; 
 
-    lcd.setCursor(0, 1);
-    lcd.print("MQTT Retry...   ");
-    
-    if (client.connect(deviceMac.c_str(), mqtt_user, mqtt_pass)) {
-      client.subscribe(topic_config);
-      client.publish(topic_status, "System Online");
-      lcd.setCursor(0, 1);
-      lcd.print("Connected!      ");
-    }
-  }
+    if (client.connect(deviceMac.c_str(), mqtt_user, mqtt_pass)) {
+      Serial.println("connected");
+      client.publish(topic_status, "System Online");
+    } else {
+      lcd.setCursor(0, 1);
+      lcd.print("MQTT Retry...");
+      delay(5000);
+    }
+  }
+}
+
+void checkManualReset() {
+  // If BOOT button is pressed (LOW)
+  if (digitalRead(BOOT_BUTTON) == LOW) {
+    unsigned long startTime = millis();
+    lcd.clear();
+    lcd.print("Release to");
+    lcd.setCursor(0, 1);
+    lcd.print("Disconnect...");
+    
+    // Wait for 3 seconds of holding
+    while (digitalRead(BOOT_BUTTON) == LOW) {
+      if (millis() - startTime > 3000) {
+        lcd.clear();
+        lcd.print("Resetting WiFi");
+        lcd.setCursor(0, 1);
+        lcd.print("Please wait...");
+        
+        WiFiManager wm;
+        wm.resetSettings(); // Clears saved SSID and Password
+        WiFi.disconnect(true, true); 
+        delay(2000);
+        ESP.restart(); // Reboots into Setup Mode
+      }
+    }
+  }
 }
 
 void setup() {
-  Serial.begin(115200);
-  pinMode(BUZZER_PIN, OUTPUT);
-  lcd.init();
-  lcd.backlight();
-  setup_wifi();
-  client.setServer(mqtt_server, 8883);
-  client.setCallback(mqttCallback); 
+  Serial.begin(115200);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(BOOT_BUTTON, INPUT_PULLUP); // BOOT button setup
+  
+  lcd.init();
+  lcd.backlight();
+  
+  lcd.setCursor(0, 0);
+  lcd.print("H-Fire System");
+  lcd.setCursor(0, 1);
+  lcd.print("Initializing...");
+  delay(1000);
+
+  setup_wifi();
+  
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("ID: ");
+  lcd.print(deviceMac.substring(9));
+  lcd.setCursor(0, 1);
+  lcd.print("System Ready");
+  delay(2000);
+  
+  client.setServer(mqtt_server, 8883);
 }
 
 void loop() {
-  // 1. Monitor WiFi (Always Restart if lost)
-  if (WiFi.status() != WL_CONNECTED) {
-    digitalWrite(BUZZER_PIN, LOW); // Silence buzzer during restart
-    ESP.restart();
-  }
+  // 1. Always check if the user wants to DISCONNECT
+  checkManualReset();
 
-  // 2. Monitor MQTT (NON-BLOCKING)
-  if (!client.connected()) {
-    tryReconnect();
-  } else {
-    client.loop();
-  }
+  // 2. Handle MQTT Connection
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
 
-  // 3. SENSOR & ALARM LOGIC (ALWAYS RUNS)
-  int ppm = analogRead(MQ2_PIN);
-  String statusMsg;
+  // 3. Read Sensor
+  int ppm = analogRead(MQ2_PIN);
+  String statusMsg;
 
-  if (ppm <= SAFE_LIMIT) {
-    statusMsg = "SAFE            ";
-    digitalWrite(BUZZER_PIN, LOW);
-  } else if (ppm > SAFE_LIMIT && ppm <= DANGER_LIMIT) {
-    statusMsg = "WARNING: SMOKE  ";
-    digitalWrite(BUZZER_PIN, HIGH); 
-    delay(100); 
-    digitalWrite(BUZZER_PIN, LOW);
-  } else {
-    statusMsg = "CRITICAL: FIRE  ";
-    digitalWrite(BUZZER_PIN, HIGH); // Continuous
-  }
+  if (ppm <= SAFE_LIMIT) {
+    statusMsg = "SAFE";
+    digitalWrite(BUZZER_PIN, LOW);
+  } 
+  else if (ppm > SAFE_LIMIT && ppm <= DANGER_LIMIT) {
+    statusMsg = "WARNING: SMOKE";
+    digitalWrite(BUZZER_PIN, HIGH); 
+    delay(100); 
+    digitalWrite(BUZZER_PIN, LOW);
+  } 
+  else {
+    statusMsg = "CRITICAL: FIRE";
+    digitalWrite(BUZZER_PIN, HIGH); 
+  }
 
-  // 4. DISPLAY UPDATE (ALWAYS RUNS)
-  lcd.setCursor(0, 0);
-  lcd.print("PPM: "); 
-  lcd.print(ppm);
-  lcd.print("     "); 
+  // 4. Update LCD
+  lcd.setCursor(0, 0);
+  lcd.print("PPM: "); 
+  lcd.print(ppm);
+  lcd.print("      "); // Clears old digits
+  lcd.setCursor(0, 1); 
+  lcd.print(statusMsg);
+  lcd.print("                "); // Clears old text
 
-  // Only show status on Line 2 if MQTT is connected
-  // Otherwise, tryReconnect() will show "MQTT Retry..."
-  if (client.connected()) {
-    lcd.setCursor(0, 1); 
-    lcd.print(statusMsg);
-    
-    // Publish only if connected
-    String dataPayload = "{\"mac\":\"" + deviceMac + "\", \"ppm\":" + String(ppm) + "}";
-    client.publish(topic_data, dataPayload.c_str());
-  }
+  // 5. Publish Data
+  String dataPayload = "{\"mac\":\"" + deviceMac + "\", \"ppm\":" + String(ppm) + "}";
+  client.publish(topic_data, dataPayload.c_str());
+  client.publish(topic_status, statusMsg.c_str());
 
-  delay(500); // Faster loop for more responsive buzzer
+  delay(2000); 
 }

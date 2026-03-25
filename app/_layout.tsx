@@ -5,10 +5,11 @@ import { DarkTheme, DefaultTheme, ThemeProvider as NavigationThemeProvider } fro
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { supabase } from '@/utils/supabase';
 import { ThemeProvider, useAppTheme } from '@/context/ThemeContext';
-import { UserProvider } from '@/context/UserContext';
+import { UserProvider, useUser } from '@/context/UserContext';
+import EmergencyModal from '@/components/EmergencyModal';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -16,18 +17,59 @@ export const unstable_settings = {
 
 function RootLayoutContent() {
   const { colorScheme } = useAppTheme();
+  const { isAdmin, profileId, activeIncident, triggerEmergency, dismissEmergency } = useUser();
 
+  // 1. SUPABASE LISTENER (Fallback / Remote)
   useEffect(() => {
-    console.log('Supabase client initialized:', supabase);
-  }, []);
+    if (!profileId) return;
+
+    const channel = supabase
+      .channel('global-alerts')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'incidents' },
+        async (payload) => {
+          const newIncident = payload.new;
+          if (newIncident.status !== 'Active') return;
+          if (!isAdmin && newIncident.profile_id !== profileId) return;
+
+          const { data: device } = await supabase
+            .from('devices')
+            .select('house_name, label')
+            .eq('mac', newIncident.device_mac)
+            .single();
+
+          triggerEmergency({
+            id: newIncident.id,
+            house_name: device?.house_name || 'Unknown House',
+            label: device?.label || 'Unknown Room',
+            ppm: newIncident.ppm_at_trigger,
+            alert_type: newIncident.alert_type as 'FIRE' | 'SMOKE',
+            device_mac: newIncident.device_mac
+          });
+        }
+      )
+      .subscribe();
+
+    return () => { channel.unsubscribe(); };
+  }, [isAdmin, profileId]);
+
+  // MQTT is now handled globally in UserProvider
 
   return (
     <NavigationThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="(admin)/dashboard" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
       <StatusBar style="auto" />
+      
+      <EmergencyModal 
+        visible={!!activeIncident} 
+        incident={activeIncident} 
+        onClose={dismissEmergency} 
+      />
     </NavigationThemeProvider>
   );
 }
