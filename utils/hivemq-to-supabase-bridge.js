@@ -1,6 +1,7 @@
 const mqtt = require('mqtt');
 const { createClient } = require('@supabase/supabase-js');
 const dotenv = require('dotenv');
+const http = require('http');
 
 dotenv.config();
 
@@ -20,7 +21,7 @@ async function refreshDeviceCache() {
     const newCache = {};
     data.forEach(d => { newCache[d.mac] = d.profile_id; });
     deviceCache = newCache;
-    console.log('🔄 Device Cache Refreshed:', Object.keys(deviceCache).length, 'devices');
+    console.log(`🔄 [${new Date().toLocaleTimeString()}] Cache Refreshed:`, Object.keys(deviceCache).length, 'devices');
   }
 }
 
@@ -87,7 +88,7 @@ async function processMessage(topic, payload) {
     ppm = data.ppm;
     flame = data.flame;
   } catch (e) {
-    return; // Ignore non-JSON or status messages
+    return; 
   }
 
   if (!mac) return;
@@ -108,7 +109,6 @@ async function processMessage(topic, payload) {
 
     if (!ownerId) return;
 
-    // --- VERIFICATION LOGIC ---
     let status = 'Normal';
     let alertType = 'NONE';
 
@@ -123,12 +123,10 @@ async function processMessage(topic, payload) {
       alertType = flame ? 'FLAME' : 'MODERATE SMOKE';
     }
 
-    // A. Insert Log
     await supabase.from('gas_logs').insert([{ 
       device_mac: mac, ppm_level: ppm, status, profile_id: ownerId 
     }]);
 
-    // B. Trigger Emergency
     if (status === 'Danger') {
       console.log(`🚨 DANGER DETECTED at ${mac}!`);
       const { data: device } = await supabase.from('devices').select('house_name').eq('mac', mac).single();
@@ -145,6 +143,15 @@ async function processMessage(topic, payload) {
 
 client.on('message', (t, m) => processMessage(t, m.toString()));
 
-// Keep-alive for some cloud platforms
-const http = require('http');
-http.createServer((req, res) => { res.write('Bridge Online'); res.end(); }).listen(process.env.PORT || 8080);
+// --- RENDER KEEP-ALIVE SERVER ---
+// This simple server allows Render to see the app as "Healthy" 
+// and gives cron-job.org a target to ping.
+const PORT = process.env.PORT || 8080;
+http.createServer((req, res) => {
+  console.log(`🌐 [${new Date().toLocaleTimeString()}] Ping received from: ${req.headers['user-agent']}`);
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.write('H-Fire Monitoring Bridge is ACTIVE');
+  res.end();
+}).listen(PORT, () => {
+  console.log(`🚀 HTTP Health-Check Server running on port ${PORT}`);
+});
