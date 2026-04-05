@@ -10,6 +10,7 @@ import { supabase } from '@/utils/supabase';
 import { ThemeProvider, useAppTheme } from '@/context/ThemeContext';
 import { UserProvider, useUser } from '@/context/UserContext';
 import EmergencyModal from '@/components/EmergencyModal';
+import { usePushNotifications } from '@/hooks/use-push-notifications';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -19,7 +20,10 @@ function RootLayoutContent() {
   const { colorScheme } = useAppTheme();
   const { isAdmin, profileId, activeIncident, triggerEmergency, dismissEmergency } = useUser();
 
-  // 1. SUPABASE LISTENER (Fallback / Remote)
+  // 1. REGISTER FOR PUSH NOTIFICATIONS
+  usePushNotifications(profileId);
+
+  // 2. SUPABASE LISTENER (Fallback / Remote)
   useEffect(() => {
     if (!profileId) return;
 

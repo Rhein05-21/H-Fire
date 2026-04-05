@@ -8,11 +8,11 @@ interface UserDetails {
 }
 
 interface Incident {
-  id: string | number; house_name: string; label: string; ppm: number; alert_type: 'FIRE' | 'SMOKE'; device_mac?: string;
+  id: string | number; house_name: string; label: string; ppm: number; alert_type: 'FIRE' | 'GAS/SMOKE'; device_mac?: string;
 }
 
 export interface Device {
-  id: string; mac: string; ppm: number; status: string; label: string; houseId: string; lastSeen: Date; profile_id?: string | null;
+  id: string; mac: string; ppm: number; status: string; label: string; houseId: string; community?: string; lastSeen: Date; profile_id?: string | null;
 }
 
 interface UserContextType {
@@ -43,6 +43,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [allHeardDevices, setAllHeardDevices] = useState<Record<string, Device>>({});
   
   const mutedDevices = useRef<Record<string, number>>({});
+  const lastLoggedTime = useRef<Record<string, number>>({});
   const [registry, setRegistry] = useState<Record<string, any>>({});
   const registryRef = useRef<Record<string, any>>({});
 
@@ -84,7 +85,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     Object.values(allHeardDevices).forEach(dev => {
       const regInfo = registry[dev.mac];
       if (regInfo && regInfo.profile_id === profileId) {
-        mine[dev.mac] = { ...dev, label: regInfo.label, houseId: regInfo.house_name };
+        mine[dev.mac] = { ...dev, label: regInfo.label, houseId: regInfo.house_name, community: regInfo.community };
       }
     });
     return mine;
@@ -152,6 +153,33 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           const regInfo = registryRef.current[mac];
           const isMine = regInfo && regInfo.profile_id === profileId;
           
+          // --- 🔥 APP-SIDE RECORDING LOGIC ---
+          // If it's my device, or I am an Admin, record the log to Supabase
+          if (isMine || isAdmin) {
+            const now = Date.now();
+            const lastLog = lastLoggedTime.current[mac] || 0;
+            const targetProfile = regInfo?.profile_id || profileId;
+
+            // Record every 1 minute OR if PPM is high (> 450)
+            if (now - lastLog > 60000 || (updated.ppm > 450 && now - lastLog > 10000)) {
+              lastLoggedTime.current[mac] = now;
+              const status = (updated.ppm > 1500) ? 'Danger' : (updated.ppm > 450 ? 'Warning' : 'Normal');
+              
+              supabase.from('gas_logs').insert([{ 
+                device_mac: mac, ppm_level: updated.ppm, status, profile_id: targetProfile 
+              }]).then(({ error }) => { if (error) console.error('Log error:', error.message); });
+
+              if (status !== 'Normal') {
+                supabase.from('incidents').insert([{
+                  device_mac: mac, status: 'Active', ppm_at_trigger: updated.ppm,
+                  alert_type: (status === 'Danger') ? 'FIRE' : 'GAS/SMOKE',
+                  profile_id: targetProfile
+                }]);
+              }
+            }
+          }
+          // -----------------------------------
+
           if ((isAdmin || isMine) && updated.ppm > 450) {
             const muteTime = mutedDevices.current[mac] || 0;
             if (Date.now() - muteTime > 120000) {
@@ -160,7 +188,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
                 house_name: regInfo?.house_name || updated.houseId,
                 label: regInfo?.label || updated.label,
                 ppm: updated.ppm,
-                alert_type: updated.ppm > 1500 ? 'FIRE' : 'SMOKE',
+                alert_type: updated.ppm > 1500 ? 'FIRE' : 'GAS/SMOKE',
                 device_mac: mac
               });
             }

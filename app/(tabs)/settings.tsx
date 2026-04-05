@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Alert, Modal, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -45,6 +46,9 @@ export default function SettingsScreen() {
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [attempts, setAttempts] = useState(0);
+  const [mapRegion, setMapRegion] = useState<{ latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number } | undefined>(undefined);
+  const [loadingGps, setLoadingGps] = useState(false);
+  const mapRef = useRef<MapView>(null);
 
   useEffect(() => {
     if (userDetails) {
@@ -80,12 +84,31 @@ export default function SettingsScreen() {
 
   const linkDevice = async (mac: string) => {
     try {
+      // 1. Update the device owner and house/community
       const { error } = await supabase
         .from('devices')
-        .update({ profile_id: profileId })
+        .update({ 
+          profile_id: profileId,
+          house_name: name || 'Unnamed House',
+          community: community || 'General'
+        })
         .eq('mac', mac);
       
       if (error) throw error;
+
+      // 2. 🔥 THE HISTORY FIX: Re-assign all previous logs for this MAC to this profile
+      // This ensures that even if you unlinked/re-linked, you see the history of this device.
+      // Alternatively, if you want history to be "fresh" for new owners, you can skip this.
+      // But usually, the same user re-linking wants their history back.
+      await supabase
+        .from('gas_logs')
+        .update({ profile_id: profileId })
+        .eq('device_mac', mac);
+      
+      await supabase
+        .from('incidents')
+        .update({ profile_id: profileId })
+        .eq('device_mac', mac);
       
       await refreshProfile(); // 🔥 FORCE REFRESH
       setAvailableDevices(prev => prev.filter(d => d.mac !== mac));
@@ -105,6 +128,8 @@ export default function SettingsScreen() {
           setUnlinking(mac);
           try {
             await supabase.from('devices').update({ profile_id: null }).eq('mac', mac);
+            // Note: We DON'T nullify logs here, so the next owner can claim them if desired,
+            // or we keep them for the system. 
             await refreshProfile(); // 🔥 FORCE REFRESH
             
             const stored = await AsyncStorage.getItem('HFIRE_DEVICE_LABELS');
@@ -127,11 +152,74 @@ export default function SettingsScreen() {
     try {
       const details = { name, community, latitude: location?.latitude, longitude: location?.longitude };
       await supabase.from('profiles').upsert({ id: profileId, ...details });
+      
+      // Also update ALL linked devices to match the new profile name/community
+      await supabase.from('devices')
+        .update({ house_name: name, community: community })
+        .eq('profile_id', profileId);
+
+      // Re-confirm all logs are tied to this profile (just in case)
+      await supabase.from('gas_logs').update({ profile_id: profileId }).eq('profile_id', null); // This is a generic sweep
+
       await setUserDetails({ ...userDetails!, ...details });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Success', 'Profile updated.');
     } catch (err) { Alert.alert('Error', 'Failed to save.'); }
     finally { setSaving(false); }
+  };
+
+  const openMapModal = async () => {
+    // If we already have a saved location, use that as the starting region
+    if (location) {
+      setMapRegion({
+        latitude: location.latitude,
+        longitude: location.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      });
+      setShowMap(true);
+      return;
+    }
+
+    // Otherwise, try to get the user's current GPS position
+    setLoadingGps(true);
+    setShowMap(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Location access is needed to set your home. Defaulting to Manila.');
+        setMapRegion({ latitude: 14.5995, longitude: 120.9842, latitudeDelta: 0.01, longitudeDelta: 0.01 });
+        return;
+      }
+      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude, longitude } = current.coords;
+      const region = { latitude, longitude, latitudeDelta: 0.01, longitudeDelta: 0.01 };
+      setMapRegion(region);
+      // Auto-pin to current location as a starting point
+      setLocation({ latitude, longitude });
+      setTimeout(() => mapRef.current?.animateToRegion(region, 800), 300);
+    } catch (e) {
+      Alert.alert('GPS Error', 'Could not get current location. Defaulting to Manila.');
+      setMapRegion({ latitude: 14.5995, longitude: 120.9842, latitudeDelta: 0.01, longitudeDelta: 0.01 });
+    } finally {
+      setLoadingGps(false);
+    }
+  };
+
+  const flyToMyLocation = async () => {
+    setLoadingGps(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude, longitude } = current.coords;
+      const region = { latitude, longitude, latitudeDelta: 0.01, longitudeDelta: 0.01 };
+      setMapRegion(region);
+      setLocation({ latitude, longitude });
+      mapRef.current?.animateToRegion(region, 800);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch (e) {}
+    finally { setLoadingGps(false); }
   };
 
   const verifyPin = async () => {
@@ -177,8 +265,10 @@ export default function SettingsScreen() {
               <Text style={styles.sectionLabel}>PERSONAL INFORMATION</Text>
               <TextInput style={[styles.input, { backgroundColor: inputBg, color: textColor }]} value={name} onChangeText={setName} placeholder="Your Name" placeholderTextColor="#999" />
               <TextInput style={[styles.input, { backgroundColor: inputBg, color: textColor }]} value={community} onChangeText={setCommunity} placeholder="Community / Block" placeholderTextColor="#999" />
-              <TouchableOpacity style={[styles.locBtn, { backgroundColor: inputBg }]} onPress={() => setShowMap(true)}>
-                <IconSymbol name="map.fill" size={18} color="#2196F3" /><Text style={[styles.locBtnText, { color: textColor }]}>{location ? 'Change Location' : 'Set Home Location'}</Text>
+              <TouchableOpacity style={[styles.locBtn, { backgroundColor: inputBg }]} onPress={openMapModal}>
+                <IconSymbol name="map.fill" size={18} color="#2196F3" />
+                <Text style={[styles.locBtnText, { color: textColor }]}>{location ? 'Change Location' : 'Set Home Location'}</Text>
+                {location && <View style={styles.locDot} />}
               </TouchableOpacity>
               <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
                 {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save Changes</Text>}
@@ -203,6 +293,7 @@ export default function SettingsScreen() {
                 <View key={dev.mac} style={[styles.deviceRow, { backgroundColor: inputBg }]}>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.deviceRowLabel, { color: textColor }]}>{dev.label}</Text>
+                    <Text style={[styles.deviceRowSub, { color: secondaryText }]}>{dev.houseId} • {dev.community || 'General'}</Text>
                     <Text style={styles.deviceRowMac}>{dev.mac}</Text>
                   </View>
                   <TouchableOpacity style={styles.unlinkBtn} onPress={() => handleUnlink(dev.mac, dev.label)}>
@@ -273,6 +364,76 @@ export default function SettingsScreen() {
         )}
       </ScrollView>
 
+      {/* MAP MODAL */}
+      <Modal visible={showMap} animationType="slide">
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }}>
+          <View style={styles.mapModalContainer}>
+            {/* Back Button */}
+            <TouchableOpacity style={styles.mapBackBtn} onPress={() => setShowMap(false)}>
+              <IconSymbol name="chevron.left" size={18} color="#fff" />
+              <Text style={styles.mapBackText}>Back</Text>
+            </TouchableOpacity>
+
+            {mapRegion ? (
+              <MapView
+                ref={mapRef}
+                provider={PROVIDER_GOOGLE}
+                style={styles.map}
+                region={mapRegion}
+                onRegionChangeComplete={(r) => setMapRegion(r)}
+                onLongPress={(e) => {
+                  const coord = e.nativeEvent.coordinate;
+                  setLocation(coord);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                }}
+              >
+                {location && (
+                  <Marker
+                    coordinate={location}
+                    title="Your Home"
+                    description="Long press anywhere to move"
+                    pinColor="#2196F3"
+                  />
+                )}
+              </MapView>
+            ) : (
+              <View style={styles.mapLoadingContainer}>
+                <ActivityIndicator size="large" color="#2196F3" />
+                <Text style={styles.mapLoadingText}>Getting your location...</Text>
+              </View>
+            )}
+
+            <View style={styles.mapOverlay}>
+              <Text style={styles.mapInstruction}>📍 Long press on the map to pin your home</Text>
+              {location && (
+                <Text style={styles.mapCoordsText}>
+                  {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
+                </Text>
+              )}
+              <View style={styles.mapBtnRow}>
+                <TouchableOpacity style={styles.mapLocateBtn} onPress={flyToMyLocation} disabled={loadingGps}>
+                  {loadingGps
+                    ? <ActivityIndicator size="small" color="#2196F3" />
+                    : <IconSymbol name="location.fill" size={16} color="#2196F3" />}
+                  <Text style={styles.mapLocateBtnText}>My Location</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.mapConfirmBtn, !location && { opacity: 0.4 }]}
+                  onPress={() => {
+                    if (!location) { Alert.alert('No pin set', 'Long press on the map to set your home location.'); return; }
+                    setShowMap(false);
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  }}
+                  disabled={!location}
+                >
+                  <Text style={styles.mapConfirmText}>Confirm Location</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
       {/* PIN MODAL placeholder (kept from previous code) */}
       <Modal visible={showPinModal} animationType="fade" transparent>
         <View style={styles.pinOverlay}>
@@ -313,10 +474,11 @@ const styles = StyleSheet.create({
   themeChipText: { fontSize: 10, fontWeight: '900' },
   deviceRow: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 12, marginBottom: 10 },
   deviceRowLabel: { fontSize: 15, fontWeight: '800' },
+  deviceRowSub: { fontSize: 12, fontWeight: '600', marginTop: 1 },
   deviceRowMac: { fontSize: 10, color: '#8e8e93', fontWeight: '600', marginTop: 2 },
   unlinkBtn: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#FF3B30' },
   unlinkText: { color: '#FF3B30', fontSize: 10, fontWeight: '900' },
-  scanBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 18, borderRadius: 15, borderWeight: 2, borderStyle: 'dashed', borderWidth: 2 },
+  scanBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 18, borderRadius: 15, borderStyle: 'dashed', borderWidth: 2 },
   scanBtnText: { color: '#2196F3', fontWeight: '900', fontSize: 15, marginLeft: 10 },
   foundTitle: { fontSize: 12, fontWeight: '800', color: '#8e8e93', marginBottom: 10 },
   foundItem: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 12, marginBottom: 10 },
@@ -333,5 +495,22 @@ const styles = StyleSheet.create({
   pinTitle: { fontSize: 20, fontWeight: '900', marginBottom: 20 },
   pinInput: { width: '100%', padding: 20, borderRadius: 15, fontSize: 32, textAlign: 'center', fontWeight: '900', letterSpacing: 10 },
   pinActions: { flexDirection: 'row', width: '100%', justifyContent: 'space-between', alignItems: 'center', marginTop: 25 },
-  pinVerify: { backgroundColor: '#2196F3', paddingHorizontal: 25, paddingVertical: 12, borderRadius: 12 }
+  pinVerify: { backgroundColor: '#2196F3', paddingHorizontal: 25, paddingVertical: 12, borderRadius: 12 },
+  
+  // Map Modal Styles
+  mapModalContainer: { flex: 1, backgroundColor: '#000' },
+  map: { flex: 1 },
+  mapBackBtn: { position: 'absolute', top: 16, left: 16, zIndex: 10, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  mapBackText: { color: '#fff', fontSize: 13, fontWeight: '800', marginLeft: 4 },
+  mapLoadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#111' },
+  mapLoadingText: { color: '#aaa', marginTop: 12, fontWeight: '700', fontSize: 14 },
+  mapOverlay: { position: 'absolute', bottom: 30, left: 16, right: 16, backgroundColor: 'rgba(255,255,255,0.96)', padding: 20, borderRadius: 24, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.12, shadowRadius: 20, elevation: 10 },
+  mapInstruction: { fontSize: 14, fontWeight: '700', color: '#444', marginBottom: 6, textAlign: 'center' },
+  mapCoordsText: { fontSize: 11, fontWeight: '700', color: '#2196F3', marginBottom: 14, letterSpacing: 0.5 },
+  mapBtnRow: { flexDirection: 'row', gap: 10, width: '100%', alignItems: 'center' },
+  mapLocateBtn: { flexDirection: 'row', alignItems: 'center', borderWidth: 2, borderColor: '#2196F3', paddingHorizontal: 16, paddingVertical: 13, borderRadius: 15, gap: 6 },
+  mapLocateBtnText: { color: '#2196F3', fontWeight: '900', fontSize: 13 },
+  mapConfirmBtn: { flex: 1, backgroundColor: '#2196F3', padding: 16, borderRadius: 15, alignItems: 'center' },
+  mapConfirmText: { color: '#fff', fontSize: 15, fontWeight: '900' },
+  locDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#34C759', marginLeft: 8 }
 });

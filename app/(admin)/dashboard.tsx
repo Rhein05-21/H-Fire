@@ -15,13 +15,13 @@ const { width, height } = Dimensions.get('window');
 const getStatusData = (ppm: number, isInactive: boolean) => {
   if (isInactive) return { color: '#9E9E9E', label: 'OFFLINE', level: 0 };
   if (ppm > 1500) return { color: '#FF3B30', label: 'FIRE', level: 3 };
-  if (ppm > 450) return { color: '#FF9500', label: 'SMOKE', level: 2 };
+  if (ppm > 450) return { color: '#FF9500', label: 'GAS/SMOKE', level: 2 };
   return { color: '#34C759', label: 'SAFE', level: 1 };
 };
 
 export default function AdminDashboard() {
   const { colorScheme } = useAppTheme();
-  const { devices: liveMqttData } = useUser();
+  const { devices: liveMqttData, triggerEmergency } = useUser();
   
   const backgroundColor = useThemeColor({}, 'background');
   const cardBg = useThemeColor({ light: '#fff', dark: '#1c1c1e' }, 'background');
@@ -53,7 +53,7 @@ export default function AdminDashboard() {
             latitude: profile?.latitude,
             longitude: profile?.longitude,
             owner_name: profile?.name,
-            community: profile?.community
+            community: d.community || profile?.community || 'General'
           };
         });
         setDbDevices(merged);
@@ -102,10 +102,30 @@ export default function AdminDashboard() {
     >
       <View style={[styles.statusIndicator, { backgroundColor: item.uiColor }]} />
       <View style={{ flex: 1, paddingLeft: 15 }}>
+        <Text style={[styles.communityText, { color: '#2196F3' }]}>{item.community.toUpperCase()}</Text>
         <Text style={[styles.houseName, { color: textColor }]}>{item.house_name}</Text>
         <Text style={[styles.ownerName, { color: secondaryText }]}>{item.owner_name || 'No Owner'} • {item.label}</Text>
-        <View style={[styles.miniBadge, { backgroundColor: item.uiColor + '20' }]}>
-          <Text style={[styles.miniBadgeText, { color: item.uiColor }]}>{item.uiLabel}</Text>
+        <View style={styles.badgeRow}>
+          <View style={[styles.miniBadge, { backgroundColor: item.uiColor + '20' }]}>
+            <Text style={[styles.miniBadgeText, { color: item.uiColor }]}>{item.uiLabel}</Text>
+          </View>
+          <TouchableOpacity 
+            style={styles.forceBtn} 
+            onPress={(e) => {
+              e.stopPropagation();
+              triggerEmergency({
+                id: `force_${Date.now()}`,
+                house_name: item.house_name,
+                label: item.label,
+                ppm: item.ppm,
+                alert_type: item.ppm > 1500 ? 'FIRE' : 'GAS/SMOKE',
+                device_mac: item.mac
+              });
+            }}
+          >
+            <IconSymbol name="bolt.fill" size={10} color="#FF3B30" />
+            <Text style={styles.forceBtnText}>FORCE SIREN</Text>
+          </TouchableOpacity>
         </View>
       </View>
       <View style={styles.ppmContainer}>
@@ -218,10 +238,14 @@ const styles = StyleSheet.create({
   list: { paddingHorizontal: 20, paddingBottom: 40 },
   deviceCard: { flexDirection: 'row', alignItems: 'center', padding: 18, borderRadius: 24, marginBottom: 12, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10 },
   statusIndicator: { width: 4, height: 45, borderRadius: 2 },
+  communityText: { fontSize: 8, fontWeight: '900', letterSpacing: 1, marginBottom: 2 },
   houseName: { fontSize: 18, fontWeight: '800' },
   ownerName: { fontSize: 12, marginTop: 2 },
-  miniBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, marginTop: 8 },
+  badgeRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 },
+  miniBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   miniBadgeText: { fontSize: 9, fontWeight: '900' },
+  forceBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FF3B3015', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#FF3B3030' },
+  forceBtnText: { color: '#FF3B30', fontSize: 8, fontWeight: '900', marginLeft: 4 },
   ppmContainer: { alignItems: 'flex-end', paddingRight: 10 },
   ppmValue: { fontSize: 32, fontWeight: '900' },
   ppmUnit: { fontSize: 10, color: '#8E8E93', fontWeight: '800', marginTop: -2 },

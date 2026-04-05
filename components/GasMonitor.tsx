@@ -16,7 +16,7 @@ const { width } = Dimensions.get('window');
 const getStatusData = (ppm: number, isInactive: boolean) => {
   if (isInactive) return { color: '#9E9E9E', label: 'OFFLINE', icon: 'wifi.slash', msg: 'Device disconnected' };
   if (ppm > 1500) return { color: '#FF3B30', label: 'FIRE', icon: 'flame.fill', msg: 'CRITICAL: EVACUATE NOW' };
-  if (ppm > 450) return { color: '#FF9500', label: 'SMOKE', icon: 'exclamationmark.triangle.fill', msg: 'WARNING: SMOKE DETECTED' };
+  if (ppm > 450) return { color: '#FF9500', label: 'GAS/SMOKE', icon: 'exclamationmark.triangle.fill', msg: 'WARNING: GAS LEAK/SMOKE DETECTED' };
   return { color: '#34C759', label: 'SAFE', icon: 'check.circle.fill', msg: 'System monitoring active' };
 };
 
@@ -58,10 +58,26 @@ export default function GasDashboard() {
 
   const saveLabel = async () => {
     if (editingMac) {
-      const newLabels = { ...labels, [editingMac]: tempLabel };
-      setLabels(newLabels);
-      await AsyncStorage.setItem('HFIRE_DEVICE_LABELS', JSON.stringify(newLabels));
-      setEditingMac(null);
+      try {
+        // 1. Sync with Supabase (so Admin sees the new label)
+        const { error } = await supabase
+          .from('devices')
+          .update({ label: tempLabel })
+          .eq('mac', editingMac);
+
+        if (error) throw error;
+
+        // 2. Update Local State & Storage
+        const newLabels = { ...labels, [editingMac]: tempLabel };
+        setLabels(newLabels);
+        await AsyncStorage.setItem('HFIRE_DEVICE_LABELS', JSON.stringify(newLabels));
+        
+        setEditingMac(null);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (e) {
+        console.error('Rename failed:', e);
+        alert('Failed to update label in database.');
+      }
     }
   };
 

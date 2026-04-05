@@ -13,17 +13,60 @@ const TOPIC_WILDCARD = 'hfire/#';
 
 let deviceCache = {};
 
+// Refresh device mapping every 30 seconds
 async function refreshDeviceCache() {
   const { data } = await supabase.from('devices').select('mac, profile_id');
   if (data) {
     const newCache = {};
     data.forEach(d => { newCache[d.mac] = d.profile_id; });
     deviceCache = newCache;
+    console.log('🔄 Device Cache Refreshed:', Object.keys(deviceCache).length, 'devices');
   }
 }
 
 refreshDeviceCache();
 setInterval(refreshDeviceCache, 30000);
+
+// --- PUSH NOTIFICATION LOGIC ---
+async function sendPushNotification(ownerId, houseName, alertType, ppm) {
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('push_token, name')
+      .eq('id', ownerId)
+      .single();
+
+    if (!profile?.push_token) {
+      console.log(`⚠️ No push token found for user: ${ownerId}`);
+      return;
+    }
+
+    console.log(`🔔 Sending Push Alert to: ${profile.name}`);
+
+    const message = {
+      to: profile.push_token,
+      sound: 'default',
+      title: `🔥 EMERGENCY: ${alertType} DETECTED`,
+      body: `${houseName}: Critical level detected (${ppm} PPM). Check the app!`,
+      data: { houseName, alertType, ppm },
+      priority: 'high',
+    };
+
+    const response = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(message),
+    });
+
+    const result = await response.json();
+    console.log('✅ Expo Response:', result);
+  } catch (error) {
+    console.error('❌ Push Error:', error.message);
+  }
+}
 
 const client = mqtt.connect(HIVEMQ_URL, {
   username: process.env.EXPO_PUBLIC_HIVEMQ_USERNAME,
@@ -32,57 +75,76 @@ const client = mqtt.connect(HIVEMQ_URL, {
 });
 
 client.on('connect', () => {
-  console.log('✅ Bridge V11: Persistent Discovery Active');
+  console.log('✅ Bridge Connected to HiveMQ Cloud');
   client.subscribe([TOPIC_WILDCARD]);
 });
 
 async function processMessage(topic, payload) {
-  let mac, ppm;
-  const parts = topic.split('/');
-  const houseId = parts[1];
-
+  let mac, ppm, flame;
   try {
     const data = JSON.parse(payload);
     mac = data.mac;
     ppm = data.ppm;
+    flame = data.flame;
   } catch (e) {
-    // If not JSON, try to find mac in cache by houseId
-    mac = Object.keys(deviceCache).find(k => k.includes(houseId));
+    return; // Ignore non-JSON or status messages
   }
 
   if (!mac) return;
 
-  // 🔥 CRITICAL: Always update the 'last_seen' time in the database
-  // This allows the App to "Scan" and find this device even if it has no owner.
-  const { error: healthErr } = await supabase
-    .from('devices')
-    .update({ last_seen: new Date().toISOString() })
-    .eq('mac', mac);
+  // 1. Update Health/Heartbeat
+  await supabase.from('devices').update({ last_seen: new Date().toISOString() }).eq('mac', mac);
 
-  if (healthErr) console.error('Health Update Error:', healthErr.message);
-
-  if (ppm !== undefined && !isNaN(ppm)) {
-    const ownerId = deviceCache[mac];
-    
-    // Only save logs/incidents if there is an owner
+  // 2. Process Data
+  if (ppm !== undefined) {
+    let ownerId = deviceCache[mac];
     if (!ownerId) {
-      console.log(`⚪ [Discovery] Device ${mac} is online but unlinked.`);
-      return;
+      const { data: dev } = await supabase.from('devices').select('profile_id').eq('mac', mac).single();
+      if (dev?.profile_id) {
+        ownerId = dev.profile_id;
+        deviceCache[mac] = ownerId;
+      }
     }
 
-    let status = (ppm > 1500) ? 'Danger' : (ppm > 450 ? 'Warning' : 'Normal');
-    console.log(`📊 [${mac}] ${ppm} PPM | ${status}`);
+    if (!ownerId) return;
 
-    await supabase.from('gas_logs').insert([{ device_mac: mac, ppm_level: ppm, status, profile_id: ownerId }]);
+    // --- VERIFICATION LOGIC ---
+    let status = 'Normal';
+    let alertType = 'NONE';
 
-    if (status !== 'Normal') {
+    if (flame === true && ppm > 450) {
+      status = 'Danger';
+      alertType = 'FIRE';
+    } else if (ppm > 1500) {
+      status = 'Danger';
+      alertType = 'GAS/SMOKE';
+    } else if (flame === true || ppm > 450) {
+      status = 'Warning';
+      alertType = flame ? 'FLAME' : 'MODERATE SMOKE';
+    }
+
+    // A. Insert Log
+    await supabase.from('gas_logs').insert([{ 
+      device_mac: mac, ppm_level: ppm, status, profile_id: ownerId 
+    }]);
+
+    // B. Trigger Emergency
+    if (status === 'Danger') {
+      console.log(`🚨 DANGER DETECTED at ${mac}!`);
+      const { data: device } = await supabase.from('devices').select('house_name').eq('mac', mac).single();
+      
       await supabase.from('incidents').insert([{
         device_mac: mac, status: 'Active', ppm_at_trigger: ppm,
-        alert_type: (status === 'Danger') ? 'FIRE' : 'SMOKE',
-        profile_id: ownerId
+        alert_type: alertType, profile_id: ownerId
       }]);
+
+      await sendPushNotification(ownerId, device?.house_name || 'Home', alertType, ppm);
     }
   }
 }
 
 client.on('message', (t, m) => processMessage(t, m.toString()));
+
+// Keep-alive for some cloud platforms
+const http = require('http');
+http.createServer((req, res) => { res.write('Bridge Online'); res.end(); }).listen(process.env.PORT || 8080);

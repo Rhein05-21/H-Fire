@@ -4,6 +4,7 @@
 CREATE TABLE IF NOT EXISTS public.devices (
     mac TEXT PRIMARY KEY,
     house_name TEXT NOT NULL,
+    community TEXT, -- Added community column
     label TEXT NOT NULL,
     profile_id TEXT, 
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -15,20 +16,21 @@ ALTER TABLE public.profiles
 ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;
 
 -- 3. Populate the 'devices' table with your 10 Device Mappings
-INSERT INTO public.devices (mac, house_name, label)
+INSERT INTO public.devices (mac, house_name, community, label)
 VALUES 
-    ('A1:B2:C3:D4:E5:F1', 'Block 1 Lot 1', 'Kitchen'),
-    ('A1:B2:C3:D4:E5:F2', 'Block 1 Lot 1', 'Bedroom'),
-    ('A1:B2:C3:D4:E5:F3', 'Block 1 Lot 2', 'Kitchen'),
-    ('A1:B2:C3:D4:E5:F4', 'Block 1 Lot 2', 'Living Room'),
-    ('A1:B2:C3:D4:E5:F5', 'Block 2 Lot 1', 'Kitchen'),
-    ('A1:B2:C3:D4:E5:F6', 'Block 2 Lot 1', 'Bedroom'),
-    ('A1:B2:C3:D4:E5:F7', 'Block 2 Lot 2', 'Kitchen'),
-    ('A1:B2:C3:D4:E5:F8', 'Block 2 Lot 2', 'Master Suite'),
-    ('A1:B2:C3:D4:E5:F9', 'Block 3 Lot 1', 'Kitchen'),
-    ('A1:B2:C3:D4:E5:FA', 'Block 3 Lot 1', 'Garage')
+    ('A1:B2:C3:D4:E5:F1', 'Block 1 Lot 1', 'Greenview', 'Kitchen'),
+    ('A1:B2:C3:D4:E5:F2', 'Block 1 Lot 1', 'Greenview', 'Bedroom'),
+    ('A1:B2:C3:D4:E5:F3', 'Block 1 Lot 2', 'Greenview', 'Kitchen'),
+    ('A1:B2:C3:D4:E5:F4', 'Block 1 Lot 2', 'Greenview', 'Living Room'),
+    ('A1:B2:C3:D4:E5:F5', 'Block 2 Lot 1', 'Woodland', 'Kitchen'),
+    ('A1:B2:C3:D4:E5:F6', 'Block 2 Lot 1', 'Woodland', 'Bedroom'),
+    ('A1:B2:C3:D4:E5:F7', 'Block 2 Lot 2', 'Woodland', 'Kitchen'),
+    ('A1:B2:C3:D4:E5:F8', 'Block 2 Lot 2', 'Woodland', 'Master Suite'),
+    ('A1:B2:C3:D4:E5:F9', 'Block 3 Lot 1', 'Sunset', 'Kitchen'),
+    ('A1:B2:C3:D4:E5:FA', 'Block 3 Lot 1', 'Sunset', 'Garage')
 ON CONFLICT (mac) DO UPDATE 
 SET house_name = EXCLUDED.house_name, 
+    community = EXCLUDED.community,
     label = EXCLUDED.label;
 
 -- 4. NEW: Create the 'incidents' table for Active Alarm Tracking
