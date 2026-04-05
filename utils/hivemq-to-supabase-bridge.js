@@ -14,16 +14,24 @@ const TOPIC_WILDCARD = 'hfire/#';
 
 let deviceCache = {};
 
-// Refresh device mapping every 30 seconds
+// Refresh device mapping & update Bridge Heartbeat every 30 seconds
 async function refreshDeviceCache() {
   const { data } = await supabase.from('devices').select('mac, profile_id');
   if (data) {
     const newCache = {};
     data.forEach(d => { newCache[d.mac] = d.profile_id; });
     deviceCache = newCache;
-    console.log(`🔄 [${new Date().toLocaleTimeString()}] Cache Refreshed:`, Object.keys(deviceCache).length, 'devices');
+    console.log(`🔄 [${new Date().toLocaleTimeString()}] Cache Refreshed`);
   }
+
+  // GLOBAL HEARTBEAT: Tell the app the Bridge is ALIVE
+  await supabase.from('app_settings').upsert({ 
+    key: 'bridge_heartbeat', 
+    value: new Date().toISOString(),
+    updated_at: new Date().toISOString() 
+  });
 }
+
 
 refreshDeviceCache();
 setInterval(refreshDeviceCache, 30000);

@@ -28,6 +28,7 @@ interface UserContextType {
   isMuted: (mac: string) => boolean;
   devices: Record<string, Device>;
   allHeardDevices: Record<string, Device>;
+  systemStatus: 'Online' | 'Offline';
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -38,14 +39,33 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [profileId, setProfileId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [bridgeHeartbeat, setBridgeHeartbeat] = useState<Date | null>(null);
   
   const [activeIncident, setActiveIncident] = useState<Incident | null>(null);
   const [allHeardDevices, setAllHeardDevices] = useState<Record<string, Device>>({});
-  
+
+  const systemStatus = useMemo(() => {
+    if (!bridgeHeartbeat) return 'Offline';
+    const secondsSinceLastPing = (Date.now() - bridgeHeartbeat.getTime()) / 1000;
+    return secondsSinceLastPing < 90 ? 'Online' : 'Offline';
+  }, [bridgeHeartbeat]);
+
   const mutedDevices = useRef<Record<string, number>>({});
   const lastLoggedTime = useRef<Record<string, number>>({});
   const [registry, setRegistry] = useState<Record<string, any>>({});
   const registryRef = useRef<Record<string, any>>({});
+
+  // Live filtered view for Resident
+  const devices = useMemo(() => {
+    const mine: Record<string, Device> = {};
+    Object.values(allHeardDevices).forEach(dev => {
+      const regInfo = registry[dev.mac];
+      if (regInfo && regInfo.profile_id === profileId) {
+        mine[dev.mac] = { ...dev, label: regInfo.label, houseId: regInfo.house_name, community: regInfo.community };
+      }
+    });
+    return mine;
+  }, [allHeardDevices, registry, profileId]);
 
   const refreshProfile = async () => {
     try {
@@ -67,6 +87,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         setIsAdmin(!!dbProfile.is_admin);
       }
 
+      // Initial Heartbeat Fetch
+      const { data: hb } = await supabase.from('app_settings').select('value').eq('key', 'bridge_heartbeat').single();
+      if (hb) setBridgeHeartbeat(new Date(hb.value));
+
       // Initial Registry Fetch
       const { data: reg } = await supabase.from('devices').select('*');
       if (reg) {
@@ -79,22 +103,13 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     finally { setLoading(false); }
   };
 
-  // Live filtered view for Resident
-  const devices = useMemo(() => {
-    const mine: Record<string, Device> = {};
-    Object.values(allHeardDevices).forEach(dev => {
-      const regInfo = registry[dev.mac];
-      if (regInfo && regInfo.profile_id === profileId) {
-        mine[dev.mac] = { ...dev, label: regInfo.label, houseId: regInfo.house_name, community: regInfo.community };
-      }
-    });
-    return mine;
-  }, [allHeardDevices, registry, profileId]);
-
-  // Realtime Registry Sync
+  // Realtime System Health & Registry Sync
   useEffect(() => {
     const channel = supabase
-      .channel('registry-sync')
+      .channel('system-sync')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'app_settings', filter: 'key=eq.bridge_heartbeat' }, (payload) => {
+        setBridgeHeartbeat(new Date(payload.new.value));
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'devices' }, (payload) => {
         const updated = payload.new as any;
         if (updated) {
@@ -233,7 +248,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     <UserContext.Provider value={{ 
       userDetails, setUserDetails, profileId, isAdmin, refreshProfile, loading,
       activeIncident, triggerEmergency, dismissEmergency, isMuted, devices,
-      allHeardDevices
+      allHeardDevices, systemStatus
     }}>
       {children}
     </UserContext.Provider>

@@ -20,8 +20,8 @@ function RootLayoutContent() {
   const { colorScheme } = useAppTheme();
   const { isAdmin, profileId, activeIncident, triggerEmergency, dismissEmergency } = useUser();
 
-  // 1. REGISTER FOR PUSH NOTIFICATIONS
-  usePushNotifications(profileId);
+  // 1. REGISTER FOR PUSH NOTIFICATIONS (Temporarily disabled for Expo Go Testing)
+  // usePushNotifications(profileId);
 
   // 2. SUPABASE LISTENER (Fallback / Remote)
   useEffect(() => {

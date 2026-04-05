@@ -32,6 +32,7 @@ export default function SettingsScreen() {
   const secondaryText = useThemeColor({ light: '#8e8e93', dark: '#8e8e93' }, 'text');
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('PROFILE');
+  const [showAdminTab, setShowAdminTab] = useState(false);
   const [name, setName] = useState('');
   const [community, setCommunity] = useState('');
   const [location, setLocation] = useState<{ latitude: number, longitude: number } | null>(null);
@@ -249,13 +250,23 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor }]} edges={['top']}>
       <View style={styles.header}>
-        <ThemedText type="title" style={styles.title}>Settings</ThemedText>
+        <TouchableOpacity 
+          onLongPress={() => {
+            setShowAdminTab(true);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            Alert.alert('System Unlocked', 'Security settings are now visible.');
+          }}
+          delayLongPress={3000}
+          activeOpacity={1}
+        >
+          <ThemedText type="title" style={styles.title}>Settings</ThemedText>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.tabContainer}>
         <TabButton title="Profile" tab="PROFILE" />
         <TabButton title="Device" tab="DEVICE" />
-        <TabButton title="Security" tab="ADMIN" />
+        {showAdminTab && <TabButton title="Security" tab="ADMIN" />}
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>

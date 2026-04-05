@@ -22,7 +22,7 @@ const getStatusData = (ppm: number, isInactive: boolean) => {
 
 export default function GasDashboard() {
   const { colorScheme } = useAppTheme();
-  const { userDetails, profileId, loading: userLoading, devices, setUserDetails } = useUser();
+  const { userDetails, profileId, loading: userLoading, devices, setUserDetails, systemStatus } = useUser();
   
   const containerBg = useThemeColor({}, 'background');
   const cardBg = useThemeColor({ light: '#fff', dark: '#1c1c1e' }, 'background');
@@ -130,13 +130,23 @@ export default function GasDashboard() {
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
       
       <View style={styles.heroHeader}>
-        <View>
+        <View style={{ flex: 1, marginRight: 10 }}>
           <Text style={styles.brandText}>H-FIRE MONITOR</Text>
-          <Text style={[styles.welcomeText, { color: textColor }]}>Welcome, {userDetails?.name?.split(' ')[0] || 'Homeowner'}</Text>
+          <Text style={[styles.welcomeText, { color: textColor }]} numberOfLines={1}>
+            Hi, {userDetails?.name?.split(' ')[0] || 'User'}
+          </Text>
         </View>
-        <View style={[styles.connBadge, { backgroundColor: internetConnected ? '#34C75920' : '#FF3B3020' }]}>
-          <View style={[styles.dot, { backgroundColor: internetConnected ? '#34C759' : '#FF3B30' }]} />
-          <Text style={[styles.connText, { color: internetConnected ? '#34C759' : '#FF3B30' }]}>{internetConnected ? 'LIVE' : 'OFFLINE'}</Text>
+
+        <View style={styles.headerBadges}>
+          <View style={[styles.connBadge, { backgroundColor: systemStatus === 'Online' ? '#34C75915' : '#FF3B3015' }]}>
+            <View style={[styles.dot, { backgroundColor: systemStatus === 'Online' ? '#34C759' : '#FF3B30' }]} />
+            <Text style={[styles.connText, { color: systemStatus === 'Online' ? '#34C759' : '#FF3B30' }]}>CLOUD</Text>
+          </View>
+
+          <View style={[styles.connBadge, { backgroundColor: internetConnected ? '#2196F315' : '#FF950015', marginTop: 4 }]}>
+            <View style={[styles.dot, { backgroundColor: internetConnected ? '#2196F3' : '#FF9500' }]} />
+            <Text style={[styles.connText, { color: internetConnected ? '#2196F3' : '#FF9500' }]}>APP</Text>
+          </View>
         </View>
       </View>
 
@@ -177,6 +187,10 @@ const styles = StyleSheet.create({
   heroHeader: { paddingHorizontal: 25, paddingTop: 60, paddingBottom: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   brandText: { color: '#2196F3', fontSize: 10, fontWeight: '900', letterSpacing: 2 },
   welcomeText: { fontSize: 28, fontWeight: '900', marginTop: 4 },
+  headerBadges: { alignItems: 'flex-end' },
+  systemStatusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
+  pulseDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
+  systemStatusText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
   connBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
   dot: { width: 6, height: 6, borderRadius: 3, marginRight: 6 },
   connText: { fontSize: 10, fontWeight: '900' },
