@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { StyleSheet, View, Text, FlatList, ActivityIndicator, Dimensions, TouchableOpacity, Modal, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE } from '@/components/Map';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/utils/supabase';
 import { useThemeColor } from '@/hooks/use-theme-color';

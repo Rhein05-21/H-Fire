@@ -1,3 +1,4 @@
+
 -- H-Fire Production Security (Phase 1: RLS Hardening)
 
 -- 1. Enable RLS on all tables

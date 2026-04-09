@@ -1,0 +1,43 @@
+PRIVACY POLICY FOR H-FIRE (RESIDENT MONITOR)
+
+Last Updated: April 09, 2026
+
+1. INTRODUCTION
+H-Fire ("we," "our," or "us") provides a Fire and Gas Leak Monitoring System. This Privacy Policy explains how we collect, use, and protect your information when you use our mobile application.
+
+2. INFORMATION WE COLLECT
+To provide accurate monitoring and emergency response services, we collect the following Personally Identifiable Information (PII):
+- Email Address (via Clerk/Facebook/Google)
+- Full Name (First, Middle, and Last Name)
+- Community / Block & Lot information
+- Detailed Household Address
+- Geographic Location (Latitude and Longitude)
+- Unique User ID (userId)
+
+3. HOW WE USE YOUR INFORMATION
+The information collected is used strictly for the following purposes:
+- Account Authentication: To securely sign you into the app.
+- Emergency Monitoring: To map your household's gas/smoke levels.
+- Emergency Response: To allow administrative monitors to identify the exact location of a fire or gas leak incident.
+- Push Notifications: To send real-time alerts to your device in case of danger.
+
+4. THIRD-PARTY SERVICES
+We use the following third-party services to operate our app:
+- Clerk: For secure user authentication and management.
+- Supabase: For secure database storage of profiles and sensor logs.
+- HiveMQ: For real-time MQTT message transfer from hardware devices.
+- Facebook/Google: For optional social login capabilities.
+
+5. DATA RETENTION AND SECURITY
+We implement industry-standard security measures to protect your data. Your location and profile data are stored securely in our database and are only accessible by authorized system administrators during emergency incidents.
+
+6. DATA DELETION INSTRUCTIONS
+Users have the right to request the deletion of their account and all associated personal data. To request data deletion:
+- Send an email to hfire.iotsyste@gmail.com
+- Use the subject line: "H-Fire Data Deletion Request"
+- Include your registered email address in the body.
+Upon receiving your request, we will permanently delete your profile, location data, and account from our systems within 48 hours.
+
+7. CONTACT US
+If you have any questions about this Privacy Policy, please contact us at:
+Email: hfire.iotsyste@gmail.com

@@ -1,9 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, TextInput, Modal, FlatList, ActivityIndicator, Dimensions, RefreshControl, Platform } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, TextInput, Modal, FlatList, ActivityIndicator, Dimensions, RefreshControl, Platform, Image } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import NetInfo from '@react-native-community/netinfo';
+import * as Notifications from 'expo-notifications';
+import * as Location from 'expo-location';
 import { supabase } from '@/utils/supabase';
 import { getStatusColor } from '@/constants/thresholds';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -39,11 +42,40 @@ export default function GasDashboard() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [setupName, setSetupName] = useState('');
   const [setupCommunity, setSetupCommunity] = useState('');
+  const [onboardingStep, setOnboardingStep] = useState(1);
 
   useEffect(() => {
     if (!userLoading && !userDetails) setShowOnboarding(true);
     else setShowOnboarding(false);
   }, [userDetails, userLoading]);
+
+  const handleStartOnboarding = async () => {
+    try {
+      // 1. Request Notification Permissions
+      const { status: notifStatus } = await Notifications.requestPermissionsAsync();
+      
+      // 2. Request Location Permissions
+      const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
+      
+      setOnboardingStep(2);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      setOnboardingStep(2);
+    }
+  };
+
+  const completeOnboarding = async () => {
+    if (!setupName.trim()) return Alert.alert('Required', 'Please enter your name.');
+    try {
+      const details = { name: setupName, community: setupCommunity || 'General' };
+      await supabase.from('profiles').upsert({ id: profileId, ...details });
+      await setUserDetails(details as any);
+      setShowOnboarding(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      Alert.alert('Error', 'Failed to save profile. Check your connection.');
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => setInternetConnected(state.isConnected));
@@ -178,12 +210,88 @@ export default function GasDashboard() {
           </View>
         </View>
       </Modal>
+      {/* Onboarding Modal */}
+      <Modal visible={showOnboarding} animationType="slide">
+        <SafeAreaView style={{ flex: 1, backgroundColor: containerBg }}>
+          <View style={styles.onboardingContainer}>
+            <View style={styles.onboardingHeader}>
+              <View style={styles.logoCircle}>
+                <Image 
+                  source={require('@/assets/images/H-Fire _logo.png')} 
+                  style={{ width: 120, height: 120, borderRadius: 60 }}
+                  resizeMode="contain"
+                />
+              </View>
+              <Text style={[styles.onboardingTitle, { color: textColor }]}>Welcome to H-Fire</Text>
+              <Text style={[styles.onboardingSub, { color: secondaryText }]}>
+                {onboardingStep === 1 
+                  ? 'We need a few permissions to keep you safe.' 
+                  : 'Tell us a bit about your home.'}
+              </Text>
+            </View>
+
+            {onboardingStep === 1 ? (
+              <View style={styles.permList}>
+                <View style={styles.permItem}>
+                  <IconSymbol name="bell.fill" size={24} color="#2196F3" />
+                  <View style={{ marginLeft: 15, flex: 1 }}>
+                    <Text style={[styles.permTitle, { color: textColor }]}>Emergency Alerts</Text>
+                    <Text style={[styles.permDesc, { color: secondaryText }]}>Receive critical sirens even if the app is closed.</Text>
+                  </View>
+                </View>
+                <View style={styles.permItem}>
+                  <IconSymbol name="location.fill" size={24} color="#34C759" />
+                  <View style={{ marginLeft: 15, flex: 1 }}>
+                    <Text style={[styles.permTitle, { color: textColor }]}>Precise Location</Text>
+                    <Text style={[styles.permDesc, { color: secondaryText }]}>Help responders find your exact house on the map.</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={styles.onboardBtn} onPress={handleStartOnboarding}>
+                  <Text style={styles.onboardBtnText}>Allow Permissions</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.formSection}>
+                <TextInput 
+                  style={[styles.modalInput, { backgroundColor: borderColor, color: textColor }]} 
+                  placeholder="Full Name" 
+                  placeholderTextColor="#999"
+                  value={setupName}
+                  onChangeText={setSetupName}
+                />
+                <TextInput 
+                  style={[styles.modalInput, { backgroundColor: borderColor, color: textColor }]} 
+                  placeholder="Community Name (e.g. Greenview)" 
+                  placeholderTextColor="#999"
+                  value={setupCommunity}
+                  onChangeText={setSetupCommunity}
+                />
+                <TouchableOpacity style={styles.onboardBtn} onPress={completeOnboarding}>
+                  <Text style={styles.onboardBtnText}>Get Started</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </SafeAreaView>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  onboardingContainer: { flex: 1, padding: 30, justifyContent: 'center' },
+  onboardingHeader: { alignItems: 'center', marginBottom: 50 },
+  logoCircle: { width: 120, height: 120, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
+  onboardingTitle: { fontSize: 32, fontWeight: '900', textAlign: 'center' },
+  onboardingSub: { fontSize: 16, textAlign: 'center', marginTop: 10, lineHeight: 22 },
+  permList: { gap: 25 },
+  permItem: { flexDirection: 'row', alignItems: 'center' },
+  permTitle: { fontSize: 18, fontWeight: '800' },
+  permDesc: { fontSize: 14, marginTop: 2 },
+  onboardBtn: { backgroundColor: '#2196F3', padding: 20, borderRadius: 20, alignItems: 'center', marginTop: 30 },
+  onboardBtnText: { color: '#fff', fontSize: 16, fontWeight: '900' },
+  formSection: { gap: 15 },
   heroHeader: { paddingHorizontal: 25, paddingTop: 60, paddingBottom: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   brandText: { color: '#2196F3', fontSize: 10, fontWeight: '900', letterSpacing: 2 },
   welcomeText: { fontSize: 28, fontWeight: '900', marginTop: 4 },

@@ -14,7 +14,7 @@ interface EmergencyModalProps {
     house_name: string;
     label: string;
     ppm: number;
-    alert_type: 'FIRE' | 'SMOKE';
+    alert_type: 'FIRE' | 'GAS/SMOKE' | 'SMOKE' | 'FLAME' | 'MODERATE SMOKE';
     device_mac?: string;
   } | null;
   onClose: () => void;

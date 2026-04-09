@@ -6,10 +6,16 @@ export default {
     "slug": "h-fire",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/H-Fire _logo.png",
     "scheme": "hfire",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "updates": {
+      "url": "https://u.expo.dev/abab58f3-55e3-4c98-8a06-51a6412d1ff2"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "ios": {
       "supportsTablet": true,
       "config": {
@@ -17,9 +23,10 @@ export default {
       }
     },
     "android": {
+      "package": "com.tigle.hfire",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundColor": "#121212",
+        "foregroundImage": "./assets/images/H-Fire _logo.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
@@ -40,12 +47,12 @@ export default {
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
+          "image": "./assets/images/H-Fire _logo.png",
+          "imageWidth": 300,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#151718"
           }
         }
       ]
@@ -53,6 +60,11 @@ export default {
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "abab58f3-55e3-4c98-8a06-51a6412d1ff2"
+      }
     }
   }
 };

@@ -1,18 +1,25 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Linking from 'expo-linking';
 import mqtt from 'mqtt';
 import { supabase } from '@/utils/supabase';
+import { useAuth, useUser as useClerkUser, useSignIn, useSignUp } from '@clerk/clerk-expo';
 
 interface UserDetails {
-  name: string; community: string; latitude?: number; longitude?: number; is_admin?: boolean;
+  name: string; 
+  block_lot: string; // Changed from community
+  address?: string; 
+  latitude?: number; 
+  longitude?: number; 
+  is_admin?: boolean;
 }
 
 interface Incident {
-  id: string | number; house_name: string; label: string; ppm: number; alert_type: 'FIRE' | 'GAS/SMOKE'; device_mac?: string;
+  id: string | number; house_name: string; label: string; ppm: number; alert_type: 'FIRE' | 'GAS/SMOKE' | 'SMOKE' | 'FLAME' | 'MODERATE SMOKE'; device_mac?: string;
 }
 
 export interface Device {
-  id: string; mac: string; ppm: number; status: string; label: string; houseId: string; community?: string; lastSeen: Date; profile_id?: string | null;
+  id: string; mac: string; ppm: number; status: string; label: string; houseId: string; block_lot?: string; lastSeen: Date; profile_id?: string | null;
 }
 
 interface UserContextType {
@@ -20,7 +27,8 @@ interface UserContextType {
   setUserDetails: (details: UserDetails) => void;
   profileId: string | null;
   isAdmin: boolean;
-  refreshProfile: () => Promise<void>;
+  isAuthenticated: boolean;
+  refreshProfile: (uid?: string) => Promise<void>;
   loading: boolean;
   activeIncident: Incident | null;
   triggerEmergency: (incident: Incident) => void;
@@ -29,12 +37,16 @@ interface UserContextType {
   devices: Record<string, Device>;
   allHeardDevices: Record<string, Device>;
   systemStatus: 'Online' | 'Offline';
+  signOut: () => Promise<void>;
+  updateProfile: (details: UserDetails) => Promise<{ error: any }>;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 const HIVEMQ_URL = `wss://${process.env.EXPO_PUBLIC_HIVEMQ_BROKER}:${process.env.EXPO_PUBLIC_HIVEMQ_PORT}/mqtt`;
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
+  const { isLoaded, userId, sessionId, signOut: clerkSignOut } = useAuth();
+  
   const [userDetails, setUserDetailsState] = useState<UserDetails | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -50,48 +62,64 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     return secondsSinceLastPing < 90 ? 'Online' : 'Offline';
   }, [bridgeHeartbeat]);
 
-  const mutedDevices = useRef<Record<string, number>>({});
-  const lastLoggedTime = useRef<Record<string, number>>({});
+  const isAuthenticated = !!userId;
+
   const [registry, setRegistry] = useState<Record<string, any>>({});
   const registryRef = useRef<Record<string, any>>({});
 
-  // Live filtered view for Resident
+  useEffect(() => {
+    if (isLoaded) {
+      if (userId) {
+        setProfileId(userId);
+        refreshProfile(userId);
+      } else {
+        setProfileId(null);
+        setUserDetailsState(null);
+        setIsAdmin(false);
+        setLoading(false);
+      }
+    }
+  }, [isLoaded, userId]);
+
   const devices = useMemo(() => {
     const mine: Record<string, Device> = {};
+    if (!profileId) return mine;
     Object.values(allHeardDevices).forEach(dev => {
       const regInfo = registry[dev.mac];
       if (regInfo && regInfo.profile_id === profileId) {
-        mine[dev.mac] = { ...dev, label: regInfo.label, houseId: regInfo.house_name, community: regInfo.community };
+        mine[dev.mac] = { ...dev, label: regInfo.label, houseId: regInfo.house_name, block_lot: regInfo.block_lot };
       }
     });
     return mine;
   }, [allHeardDevices, registry, profileId]);
 
-  const refreshProfile = async () => {
-    try {
-      let currentId = await AsyncStorage.getItem('HFIRE_PROFILE_ID');
-      if (!currentId) {
-        currentId = `user_${Math.random().toString(36).slice(2, 11)}`;
-        await AsyncStorage.setItem('HFIRE_PROFILE_ID', currentId);
-      }
-      setProfileId(currentId);
+  const refreshProfile = async (uid?: string) => {
+    const targetId = uid || profileId;
+    if (!targetId) { setLoading(false); return; }
 
-      const { data: dbProfile } = await supabase.from('profiles').select('*').eq('id', currentId).single();
+    setLoading(true);
+    try {
+      const { data: dbProfile, error: profileErr } = await supabase.from('profiles').select('*').eq('id', targetId).single();
+      
       if (dbProfile) {
-        const profileData = { 
-          name: dbProfile.name, community: dbProfile.community,
-          latitude: dbProfile.latitude, longitude: dbProfile.longitude,
+        const profileData: UserDetails = { 
+          name: dbProfile.name, 
+          block_lot: dbProfile.block_lot, // Map to new field
+          address: dbProfile.address,
+          latitude: dbProfile.latitude, 
+          longitude: dbProfile.longitude,
           is_admin: dbProfile.is_admin
         };
         setUserDetailsState(profileData);
         setIsAdmin(!!dbProfile.is_admin);
+      } else {
+        setUserDetailsState(null);
+        setIsAdmin(false);
       }
 
-      // Initial Heartbeat Fetch
       const { data: hb } = await supabase.from('app_settings').select('value').eq('key', 'bridge_heartbeat').single();
       if (hb) setBridgeHeartbeat(new Date(hb.value));
 
-      // Initial Registry Fetch
       const { data: reg } = await supabase.from('devices').select('*');
       if (reg) {
         const cache: any = {};
@@ -99,11 +127,41 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         setRegistry(cache);
         registryRef.current = cache;
       }
-    } catch (e) { console.error(e); }
+    } catch (e: any) { console.error(e); }
     finally { setLoading(false); }
   };
 
-  // Realtime System Health & Registry Sync
+  const signOut = async () => {
+    setLoading(true);
+    try { await clerkSignOut(); } catch (e) {}
+    setProfileId(null);
+    setUserDetailsState(null);
+    setIsAdmin(false);
+    setLoading(false);
+  };
+
+  const updateProfile = async (details: UserDetails) => {
+    if (!profileId) return { error: new Error('Not authenticated') };
+    
+    const { error } = await supabase.from('profiles').upsert({
+      id: profileId,
+      name: details.name,
+      block_lot: details.block_lot, // Use new column name
+      address: details.address,
+      latitude: details.latitude,
+      longitude: details.longitude,
+      is_admin: details.is_admin || false,
+      updated_at: new Date().toISOString()
+    });
+
+    if (!error) {
+      setUserDetailsState(details);
+      setIsAdmin(!!details.is_admin);
+    }
+    return { error };
+  };
+
+  // MQTT & Listeners logic...
   useEffect(() => {
     const channel = supabase
       .channel('system-sync')
@@ -113,7 +171,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'devices' }, (payload) => {
         const updated = payload.new as any;
         if (updated) {
-          console.log('Registry Update:', updated.mac, 'linked to', updated.profile_id);
           setRegistry(prev => {
             const next = { ...prev, [updated.mac]: updated };
             registryRef.current = next;
@@ -125,99 +182,36 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     return () => { channel.unsubscribe(); };
   }, []);
 
-  // Stable MQTT Connection
   useEffect(() => {
     if (!profileId) return;
-    
-    let client: mqtt.MqttClient | null = null;
-    const topic = 'hfire/#';
-
-    client = mqtt.connect(HIVEMQ_URL, {
+    const client = mqtt.connect(HIVEMQ_URL, {
       protocol: 'wss', path: '/mqtt',
       username: process.env.EXPO_PUBLIC_HIVEMQ_USERNAME,
       password: process.env.EXPO_PUBLIC_HIVEMQ_PASSWORD,
       clientId: `hfire_app_${profileId}_${Math.random().toString(16).slice(2, 5)}`,
       reconnectPeriod: 5000,
     });
-
-    client.on('connect', () => client?.subscribe(topic));
-
+    client.on('connect', () => client.subscribe('hfire/#'));
     client.on('message', (receivedTopic, message) => {
       try {
-        const payload = message.toString();
-        if (!payload.startsWith('{')) return;
-
-        const data = JSON.parse(payload);
+        const data = JSON.parse(message.toString());
         const mac = data.mac;
-        if (!mac || !mac.includes(':')) return;
-
-        const parts = receivedTopic.split('/');
-        const houseIdFromTopic = parts[1];
-
-        setAllHeardDevices(prev => {
-          const updated: Device = {
-            id: mac, mac: mac,
-            ppm: data.ppm !== undefined ? parseInt(data.ppm) : 0,
-            status: (data.status === 'SAFE') ? 'Normal' : (data.status || 'Normal'),
+        if (!mac) return;
+        setAllHeardDevices(prev => ({
+          ...prev,
+          [mac]: {
+            id: mac, mac,
+            ppm: data.ppm || 0,
+            status: data.status || 'Normal',
             label: `Device ${mac.slice(-4)}`,
-            houseId: houseIdFromTopic,
+            houseId: receivedTopic.split('/')[1],
             lastSeen: new Date()
-          };
-
-          // Check ownership via the REF (to avoid rebooting client)
-          const regInfo = registryRef.current[mac];
-          const isMine = regInfo && regInfo.profile_id === profileId;
-          
-          // --- 🔥 APP-SIDE RECORDING LOGIC ---
-          // If it's my device, or I am an Admin, record the log to Supabase
-          if (isMine || isAdmin) {
-            const now = Date.now();
-            const lastLog = lastLoggedTime.current[mac] || 0;
-            const targetProfile = regInfo?.profile_id || profileId;
-
-            // Record every 1 minute OR if PPM is high (> 450)
-            if (now - lastLog > 60000 || (updated.ppm > 450 && now - lastLog > 10000)) {
-              lastLoggedTime.current[mac] = now;
-              const status = (updated.ppm > 1500) ? 'Danger' : (updated.ppm > 450 ? 'Warning' : 'Normal');
-              
-              supabase.from('gas_logs').insert([{ 
-                device_mac: mac, ppm_level: updated.ppm, status, profile_id: targetProfile 
-              }]).then(({ error }) => { if (error) console.error('Log error:', error.message); });
-
-              if (status !== 'Normal') {
-                supabase.from('incidents').insert([{
-                  device_mac: mac, status: 'Active', ppm_at_trigger: updated.ppm,
-                  alert_type: (status === 'Danger') ? 'FIRE' : 'GAS/SMOKE',
-                  profile_id: targetProfile
-                }]);
-              }
-            }
           }
-          // -----------------------------------
-
-          if ((isAdmin || isMine) && updated.ppm > 450) {
-            const muteTime = mutedDevices.current[mac] || 0;
-            if (Date.now() - muteTime > 120000) {
-              setActiveIncident({
-                id: `mqtt_${Date.now()}`,
-                house_name: regInfo?.house_name || updated.houseId,
-                label: regInfo?.label || updated.label,
-                ppm: updated.ppm,
-                alert_type: updated.ppm > 1500 ? 'FIRE' : 'GAS/SMOKE',
-                device_mac: mac
-              });
-            }
-          }
-
-          return { ...prev, [mac]: updated };
-        });
+        }));
       } catch (e) {}
     });
-
-    return () => { if (client) client.end(); };
-  }, [profileId, isAdmin]); // Only re-connect if profile/role changes
-
-  useEffect(() => { refreshProfile(); }, []);
+    return () => { client.end(); };
+  }, [profileId]);
 
   const setUserDetails = async (details: UserDetails) => {
     setUserDetailsState(details);
@@ -225,30 +219,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.setItem('HFIRE_USER_DETAILS', JSON.stringify(details));
   };
 
-  const triggerEmergency = (incident: Incident) => {
-    const mac = incident.device_mac || 'unknown';
-    const muteTime = mutedDevices.current[mac] || 0;
-    if (Date.now() - muteTime < 120000) return;
-    setActiveIncident(incident);
-  };
-
-  const dismissEmergency = () => {
-    if (activeIncident && activeIncident.device_mac) {
-      mutedDevices.current[activeIncident.device_mac] = Date.now();
-    }
-    setActiveIncident(null);
-  };
-
-  const isMuted = (mac: string) => {
-    const muteTime = mutedDevices.current[mac] || 0;
-    return (Date.now() - muteTime < 120000);
-  };
+  const triggerEmergency = (incident: Incident) => { setActiveIncident(incident); };
+  const dismissEmergency = () => { setActiveIncident(null); };
+  const isMuted = (mac: string) => false;
 
   return (
     <UserContext.Provider value={{ 
       userDetails, setUserDetails, profileId, isAdmin, refreshProfile, loading,
       activeIncident, triggerEmergency, dismissEmergency, isMuted, devices,
-      allHeardDevices, systemStatus
+      allHeardDevices, systemStatus,
+      isAuthenticated, signOut, updateProfile
     }}>
       {children}
     </UserContext.Provider>

@@ -6,8 +6,15 @@ const http = require('http');
 dotenv.config();
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// FIX: Use service_role key for server-side bridge (bypasses RLS for system-level inserts)
+// Falls back to anon key if service_role not set (dev compatibility)
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.warn('⚠️  WARNING: SUPABASE_SERVICE_ROLE_KEY not set. Using anon key as fallback.');
+  console.warn('   Set SUPABASE_SERVICE_ROLE_KEY in your .env for production use.');
+}
 
 const HIVEMQ_URL = `wss://${process.env.EXPO_PUBLIC_HIVEMQ_BROKER}:${process.env.EXPO_PUBLIC_HIVEMQ_PORT}/mqtt`;
 const TOPIC_WILDCARD = 'hfire/#';
@@ -88,14 +95,45 @@ client.on('connect', () => {
   client.subscribe([TOPIC_WILDCARD]);
 });
 
+// --- PAYLOAD VALIDATION ---
+const MAC_REGEX = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/;
+
+function validatePayload(data) {
+  // Validate MAC address format (XX:XX:XX:XX:XX:XX)
+  if (!data.mac || typeof data.mac !== 'string' || !MAC_REGEX.test(data.mac)) {
+    return { valid: false, reason: `Invalid MAC: ${data.mac}` };
+  }
+  // Validate PPM range (must be a number between 0 and 10000)
+  if (data.ppm !== undefined) {
+    const ppm = Number(data.ppm);
+    if (isNaN(ppm) || ppm < 0 || ppm > 10000) {
+      return { valid: false, reason: `Invalid PPM: ${data.ppm}` };
+    }
+  }
+  // Validate flame field (must be boolean if present)
+  if (data.flame !== undefined && typeof data.flame !== 'boolean') {
+    return { valid: false, reason: `Invalid flame value: ${data.flame}` };
+  }
+  return { valid: true };
+}
+
 async function processMessage(topic, payload) {
   let mac, ppm, flame;
   try {
     const data = JSON.parse(payload);
+    
+    // FIX: Validate payload before processing
+    const validation = validatePayload(data);
+    if (!validation.valid) {
+      console.warn(`⚠️ Rejected payload: ${validation.reason}`);
+      return;
+    }
+    
     mac = data.mac;
-    ppm = data.ppm;
-    flame = data.flame;
+    ppm = Number(data.ppm);
+    flame = data.flame === true;
   } catch (e) {
+    console.warn('⚠️ Rejected non-JSON payload');
     return; 
   }
 
@@ -151,15 +189,36 @@ async function processMessage(topic, payload) {
 
 client.on('message', (t, m) => processMessage(t, m.toString()));
 
-// --- RENDER KEEP-ALIVE SERVER ---
-// This simple server allows Render to see the app as "Healthy" 
-// and gives cron-job.org a target to ping.
+// --- RENDER KEEP-ALIVE SERVER (with basic rate limiting) ---
 const PORT = process.env.PORT || 8080;
+const rateLimit = {}; // { ip: { count, resetTime } }
+const RATE_LIMIT_MAX = 60;       // Max requests per window
+const RATE_LIMIT_WINDOW = 60000; // 1 minute window
+
 http.createServer((req, res) => {
-  console.log(`🌐 [${new Date().toLocaleTimeString()}] Ping received from: ${req.headers['user-agent']}`);
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.write('H-Fire Monitoring Bridge is ACTIVE');
-  res.end();
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  
+  // Basic rate limiting
+  if (!rateLimit[ip] || now > rateLimit[ip].resetTime) {
+    rateLimit[ip] = { count: 1, resetTime: now + RATE_LIMIT_WINDOW };
+  } else {
+    rateLimit[ip].count++;
+    if (rateLimit[ip].count > RATE_LIMIT_MAX) {
+      res.writeHead(429, { 'Content-Type': 'text/plain' });
+      res.end('Rate limit exceeded');
+      return;
+    }
+  }
+  
+  console.log(`🌐 [${new Date().toLocaleTimeString()}] Ping from: ${ip}`);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({
+    status: 'active',
+    uptime: process.uptime(),
+    devices_cached: Object.keys(deviceCache).length,
+    timestamp: new Date().toISOString()
+  }));
 }).listen(PORT, () => {
   console.log(`🚀 HTTP Health-Check Server running on port ${PORT}`);
 });
