@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -10,7 +10,6 @@ import {
   Platform,
   Dimensions,
   Animated,
-  Alert,
   ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -25,12 +24,22 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { IconSymbol } from '@/components/ui/icon-symbol';
 
 const { width } = Dimensions.get('window');
 const ACCENT = '#2196F3';
 
 WebBrowser.maybeCompleteAuthSession();
+
+const InputField = ({ label, inputBg, textColor, colorScheme, placeholderColor, labelColor, ...props }: any) => (
+  <View style={styles.inputContainer}>
+    <Text style={[styles.label, { color: labelColor }]}>{label}</Text>
+    <TextInput
+      style={[styles.input, { backgroundColor: inputBg, color: textColor, borderColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}
+      placeholderTextColor={placeholderColor}
+      {...props}
+    />
+  </View>
+);
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -60,7 +69,7 @@ export default function LoginScreen() {
   const [firstName, setFirstName] = useState('');
   const [middleName, setMiddleName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [blockLot, setBlockLot] = useState(''); // Changed
+  const [blockLot, setBlockLot] = useState(''); 
   const [address, setAddress] = useState('');
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
@@ -196,16 +205,7 @@ export default function LoginScreen() {
     } catch (err) {}
   };
 
-  const InputField = ({ label, ...props }: any) => (
-    <View style={styles.inputContainer}>
-      <Text style={[styles.label, { color: labelColor }]}>{label}</Text>
-      <TextInput
-        style={[styles.input, { backgroundColor: inputBg, color: textColor, borderColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}
-        placeholderTextColor={placeholderColor}
-        {...props}
-      />
-    </View>
-  );
+  const sharedProps = { inputBg, textColor, colorScheme, placeholderColor, labelColor };
 
   return (
     <KeyboardAvoidingView style={[styles.container, { backgroundColor }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -227,19 +227,19 @@ export default function LoginScreen() {
         <Animated.View style={[styles.form, { transform: [{ translateX: shakeAnim }] }]}>
           {!isProfilePending ? (
             <>
-              <InputField label="Email Address" placeholder="example@email.com" keyboardType="email-address" autoCapitalize="none" maxLength={100} value={email} onChangeText={setEmail} />
-              <InputField label="Password" placeholder="Your password" secureTextEntry maxLength={100} value={password} onChangeText={setPassword} />
+              <InputField label="Email Address" placeholder="example@email.com" keyboardType="email-address" autoCapitalize="none" maxLength={100} value={email} onChangeText={setEmail} {...sharedProps} />
+              <InputField label="Password" placeholder="Your password" secureTextEntry maxLength={100} value={password} onChangeText={setPassword} {...sharedProps} />
             </>
           ) : profileStep === 1 ? (
             <View style={{ gap: 15 }}>
-              <InputField label="First Name" placeholder="John" maxLength={50} value={firstName} onChangeText={setFirstName} />
-              <InputField label="Middle Name (Optional)" placeholder="Quincy" maxLength={50} value={middleName} onChangeText={setMiddleName} />
-              <InputField label="Last Name" placeholder="Doe" maxLength={50} value={lastName} onChangeText={setLastName} />
-              <InputField label="Block and Lot Number" placeholder="Block 1 Lot 1" maxLength={100} value={blockLot} onChangeText={setBlockLot} />
+              <InputField label="First Name" placeholder="John" maxLength={50} value={firstName} onChangeText={setFirstName} {...sharedProps} />
+              <InputField label="Middle Name (Optional)" placeholder="Quincy" maxLength={50} value={middleName} onChangeText={setMiddleName} {...sharedProps} />
+              <InputField label="Last Name" placeholder="Doe" maxLength={50} value={lastName} onChangeText={setLastName} {...sharedProps} />
+              <InputField label="Block and Lot Number" placeholder="Block 1 Lot 1" maxLength={100} value={blockLot} onChangeText={setBlockLot} {...sharedProps} />
             </View>
           ) : (
             <View style={{ gap: 10 }}>
-              <InputField label="Detailed Household Address" placeholder="House No., Street, etc." maxLength={250} value={address} onChangeText={setAddress} multiline />
+              <InputField label="Detailed Household Address" placeholder="House No., Street, etc." maxLength={250} value={address} onChangeText={setAddress} multiline {...sharedProps} />
               <View style={{ height: 300, borderRadius: 16, overflow: 'hidden' }}>
                 <MapView ref={mapRef} style={StyleSheet.absoluteFill} initialRegion={{ latitude: location?.latitude || 14.5995, longitude: location?.longitude || 120.9842, latitudeDelta: 0.01, longitudeDelta: 0.01 }} onPress={(e) => handleMapPress(e.nativeEvent.coordinate)}>
                   {location && <Marker coordinate={location} title="Your Location" />}

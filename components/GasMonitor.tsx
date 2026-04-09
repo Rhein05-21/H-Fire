@@ -165,7 +165,7 @@ export default function GasDashboard() {
         <View style={{ flex: 1, marginRight: 10 }}>
           <Text style={styles.brandText}>H-FIRE MONITOR</Text>
           <Text style={[styles.welcomeText, { color: textColor }]} numberOfLines={1}>
-            Hi, {userDetails?.name?.split(' ')[0] || 'User'}
+            Hi, {userDetails?.name?.includes(',') ? userDetails.name.split(',')[1].trim().split(' ')[0] : (userDetails?.name?.split(' ')[0] || 'User')}
           </Text>
         </View>
 

@@ -10,6 +10,8 @@ import {
   TextInput,
   Alert,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -92,17 +94,28 @@ export default function FamilyMembersScreen() {
       setRelationship('Member');
       setPhone('+639');
       setEmail('');
-      setIsPrimary(members.length === 0); // Default first member to primary
+      setIsPrimary(members.length === 0); 
     }
     setModalVisible(true);
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!fullName || !phone || !age) {
       Alert.alert('Error', 'Please fill in required fields (Name, Age, Phone)');
       return;
     }
 
+    Alert.alert(
+      editingMember ? 'Update Member' : 'Add Member',
+      `Are you sure you want to ${editingMember ? 'update' : 'add'} ${fullName}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Yes, Save', onPress: executeSave }
+      ]
+    );
+  };
+
+  const executeSave = async () => {
     setSaving(true);
     try {
       const payload = {
@@ -251,7 +264,10 @@ export default function FamilyMembersScreen() {
       {/* MEMBER MODAL */}
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: cardBg }]}>
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={[styles.modalContent, { backgroundColor: cardBg }]}
+          >
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: textColor }]}>
                 {editingMember ? 'Edit Member' : 'Add Member'}
@@ -261,7 +277,7 @@ export default function FamilyMembersScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.form}>
+            <ScrollView style={styles.form} showsVerticalScrollIndicator={false}>
               <Text style={styles.label}>FULL NAME *</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: inputBg, color: textColor }]}
@@ -342,15 +358,24 @@ export default function FamilyMembersScreen() {
                 <Text style={[styles.checkLabel, { color: textColor }]}>Set as Primary Contact</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.saveBtn, saving && { opacity: 0.7 }]}
-                onPress={handleSave}
-                disabled={saving}
-              >
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save Member</Text>}
-              </TouchableOpacity>
+              <View style={styles.btnRow}>
+                <TouchableOpacity
+                  style={[styles.cancelBtn, { borderColor: secondaryText }]}
+                  onPress={() => setModalVisible(false)}
+                >
+                  <Text style={[styles.cancelBtnText, { color: textColor }]}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.saveBtn, saving && { opacity: 0.7 }]}
+                  onPress={handleSave}
+                  disabled={saving}
+                >
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save Member</Text>}
+                </TouchableOpacity>
+              </View>
             </ScrollView>
-          </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </SafeAreaView>
@@ -397,6 +422,9 @@ const styles = StyleSheet.create({
   relChipText: { fontWeight: '800' },
   checkRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 10 },
   checkLabel: { fontWeight: '700', fontSize: 14 },
-  saveBtn: { backgroundColor: '#2196F3', padding: 20, borderRadius: 15, alignItems: 'center', marginTop: 20 },
+  btnRow: { flexDirection: 'row', gap: 15, marginTop: 20 },
+  cancelBtn: { flex: 1, padding: 18, borderRadius: 15, alignItems: 'center', borderWidth: 1 },
+  cancelBtnText: { fontWeight: '800', fontSize: 16 },
+  saveBtn: { flex: 2, backgroundColor: '#2196F3', padding: 18, borderRadius: 15, alignItems: 'center' },
   saveBtnText: { color: '#fff', fontWeight: '900', fontSize: 16 },
 });

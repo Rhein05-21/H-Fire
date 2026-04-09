@@ -27,6 +27,17 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 const { width } = Dimensions.get('window');
 const ACCENT = '#2196F3';
 
+const InputField = ({ label, inputBg, textColor, colorScheme, placeholderColor, labelColor, ...props }: any) => (
+  <View style={styles.inputContainer}>
+    <Text style={[styles.label, { color: labelColor }]}>{label}</Text>
+    <TextInput
+      style={[styles.input, { backgroundColor: inputBg, color: textColor, borderColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}
+      placeholderTextColor={placeholderColor}
+      {...props}
+    />
+  </View>
+);
+
 export default function SignupScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
@@ -48,7 +59,7 @@ export default function SignupScreen() {
   const [firstName, setFirstName] = useState('');
   const [middleName, setMiddleName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [blockLot, setBlockLot] = useState(''); // Changed
+  const [blockLot, setBlockLot] = useState(''); 
   const [address, setAddress] = useState('');
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
@@ -173,16 +184,7 @@ export default function SignupScreen() {
     } catch (err) {}
   };
 
-  const InputField = ({ label, ...props }: any) => (
-    <View style={styles.inputContainer}>
-      <Text style={[styles.label, { color: labelColor }]}>{label}</Text>
-      <TextInput
-        style={[styles.input, { backgroundColor: inputBg, color: textColor, borderColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}
-        placeholderTextColor={placeholderColor}
-        {...props}
-      />
-    </View>
-  );
+  const sharedProps = { inputBg, textColor, colorScheme, placeholderColor, labelColor };
 
   return (
     <KeyboardAvoidingView style={[styles.container, { backgroundColor }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -207,30 +209,30 @@ export default function SignupScreen() {
         <Animated.View style={[styles.form, { transform: [{ translateX: shakeAnim }] }]}>
           {step === 1 && (
             <>
-              <InputField label="Email Address" placeholder="example@email.com" keyboardType="email-address" autoCapitalize="none" maxLength={100} value={email} onChangeText={setEmail} />
-              <InputField label="Password" placeholder="Min. 8 characters" secureTextEntry maxLength={100} value={password} onChangeText={setPassword} />
+              <InputField label="Email Address" placeholder="example@email.com" keyboardType="email-address" autoCapitalize="none" maxLength={100} value={email} onChangeText={setEmail} {...sharedProps} />
+              <InputField label="Password" placeholder="Min. 8 characters" secureTextEntry maxLength={100} value={password} onChangeText={setPassword} {...sharedProps} />
             </>
           )}
 
           {step === 2 && (
             <View>
               <Text style={styles.verifyInfo}>Sent to: {email}</Text>
-              <InputField label="Verification Code" style={[styles.input, styles.otpInput, { backgroundColor: inputBg, color: textColor }]} placeholder="000000" keyboardType="number-pad" maxLength={6} value={code} onChangeText={setCode} autoFocus />
+              <InputField label="Verification Code" style={[styles.input, styles.otpInput, { backgroundColor: inputBg, color: textColor }]} placeholder="000000" keyboardType="number-pad" maxLength={6} value={code} onChangeText={setCode} autoFocus {...sharedProps} />
             </View>
           )}
 
           {step === 3 && (
             <View style={{ gap: 15 }}>
-              <InputField label="First Name" placeholder="John" maxLength={50} value={firstName} onChangeText={setFirstName} />
-              <InputField label="Middle Name (Optional)" placeholder="Quincy" maxLength={50} value={middleName} onChangeText={setMiddleName} />
-              <InputField label="Last Name" placeholder="Doe" maxLength={50} value={lastName} onChangeText={setLastName} />
-              <InputField label="Block and Lot Number" placeholder="Block 1 Lot 1" maxLength={100} value={blockLot} onChangeText={setBlockLot} />
+              <InputField label="First Name" placeholder="John" maxLength={50} value={firstName} onChangeText={setFirstName} {...sharedProps} />
+              <InputField label="Middle Name (Optional)" placeholder="Quincy" maxLength={50} value={middleName} onChangeText={setMiddleName} {...sharedProps} />
+              <InputField label="Last Name" placeholder="Doe" maxLength={50} value={lastName} onChangeText={setLastName} {...sharedProps} />
+              <InputField label="Block and Lot Number" placeholder="Block 1 Lot 1" maxLength={100} value={blockLot} onChangeText={setBlockLot} {...sharedProps} />
             </View>
           )}
 
           {step === 4 && (
             <View style={{ gap: 10 }}>
-              <InputField label="Detailed Household Address" placeholder="House No., Street, etc." maxLength={250} value={address} onChangeText={setAddress} multiline />
+              <InputField label="Detailed Household Address" placeholder="House No., Street, etc." maxLength={250} value={address} onChangeText={setAddress} multiline {...sharedProps} />
               <View style={{ height: 300, borderRadius: 16, overflow: 'hidden', marginTop: 5 }}>
                 <MapView ref={mapRef} style={StyleSheet.absoluteFill} initialRegion={{ latitude: location?.latitude || 14.5995, longitude: location?.longitude || 120.9842, latitudeDelta: 0.01, longitudeDelta: 0.01 }} onPress={(e) => handleMapPress(e.nativeEvent.coordinate)}>
                   {location && <Marker coordinate={location} title="Your Location" />}

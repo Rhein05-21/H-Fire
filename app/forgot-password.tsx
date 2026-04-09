@@ -134,7 +134,11 @@ export default function ForgotPasswordScreen() {
   };
 
   return (
-    <KeyboardAvoidingView style={[styles.container, { backgroundColor }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView 
+      style={[styles.container, { backgroundColor }]} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
       <View style={[styles.bgTop, { backgroundColor: colorScheme === 'dark' ? 'rgba(33, 150, 243, 0.08)' : 'rgba(33, 150, 243, 0.05)' }]} />
       <View style={[styles.bgBottom, { backgroundColor: colorScheme === 'dark' ? 'rgba(33, 150, 243, 0.04)' : 'rgba(33, 150, 243, 0.02)' }]} />

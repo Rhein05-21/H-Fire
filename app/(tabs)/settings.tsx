@@ -72,7 +72,7 @@ export default function SettingsScreen() {
         setFirstName(fullName);
       }
       
-      setCommunity(userDetails.community || '');
+      setCommunity(userDetails.block_lot || '');
       setAddress(userDetails.address || '');
       if (userDetails.latitude && userDetails.longitude) {
         setLocation({ latitude: userDetails.latitude, longitude: userDetails.longitude });
@@ -122,11 +122,11 @@ export default function SettingsScreen() {
     setSaving(true);
     try {
       const combinedName = `${lastName.trim()}, ${firstName.trim()}${middleName ? ' ' + middleName.trim() : ''}`;
-      const details = { name: combinedName, community, address: address.trim(), latitude: location?.latitude, longitude: location?.longitude };
+      const details = { name: combinedName, block_lot: community, address: address.trim(), latitude: location?.latitude, longitude: location?.longitude };
       const { error } = await updateProfile(details);
       if (error) throw error;
       
-      await supabase.from('devices').update({ house_name: combinedName, community: community }).eq('profile_id', profileId);
+      await supabase.from('devices').update({ house_name: combinedName, block_lot: community }).eq('profile_id', profileId);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Success', 'Profile updated.');
     } catch (err) { Alert.alert('Error', 'Failed to save.'); }
@@ -287,6 +287,15 @@ export default function SettingsScreen() {
                 {location && <View style={styles.locDot} />}
               </TouchableOpacity>
 
+              <TouchableOpacity style={[styles.locBtn, { backgroundColor: inputBg, marginTop: 10 }]} onPress={() => router.push('/family-members')}>
+                <IconSymbol name="person.2.fill" size={18} color="#2196F3" />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={[styles.locBtnText, { color: textColor, marginLeft: 0 }]}>Household Members</Text>
+                  <Text style={{ fontSize: 11, color: secondaryText, fontWeight: '600' }}>Emergency contacts & residents</Text>
+                </View>
+                <IconSymbol name="chevron.right" size={14} color={secondaryText} />
+              </TouchableOpacity>
+
               <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
                 {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save Changes</Text>}
               </TouchableOpacity>
@@ -319,7 +328,7 @@ export default function SettingsScreen() {
                 <View key={dev.mac} style={[styles.deviceRow, { backgroundColor: inputBg }]}>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.deviceRowLabel, { color: textColor }]}>{dev.label}</Text>
-                    <Text style={[styles.deviceRowSub, { color: secondaryText }]}>{dev.houseId} • {dev.community || 'General'}</Text>
+                    <Text style={[styles.deviceRowSub, { color: secondaryText }]}>{dev.houseId} • {dev.block_lot || 'General'}</Text>
                     <Text style={styles.deviceRowMac}>{dev.mac}</Text>
                   </View>
                   <TouchableOpacity style={styles.unlinkBtn} onPress={() => handleUnlink(dev.mac, dev.label)}>

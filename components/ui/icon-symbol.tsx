@@ -33,6 +33,14 @@ const MAPPING = {
   'gearshape.fill': 'settings',
   'sun.max.fill': 'light-mode',
   'moon.fill': 'dark-mode',
+  'chevron.left': 'chevron-left',
+  'trash.fill': 'delete',
+  'person.2.fill': 'people',
+  'xmark.circle.fill': 'cancel',
+  'plus': 'add',
+  'square': 'check-box-outline-blank',
+  'checkmark.square.fill': 'check-box',
+  'arrow.left': 'arrow-back',
 } as IconMapping;
 
 /**
