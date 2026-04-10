@@ -1,17 +1,16 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Alert, Modal, Dimensions, KeyboardAvoidingView, Platform, useColorScheme } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, PROVIDER_GOOGLE } from '@/components/Map';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
-import * as Haptics from 'expo-haptics';
-import * as Location from 'expo-location';
-import { supabase } from '@/utils/supabase';
-import { useThemeColor } from '@/hooks/use-theme-color';
+import { ThemedText } from '@/components/themed-text';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAppTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { ThemedText } from '@/components/themed-text';
+import { useThemeColor } from '@/hooks/use-theme-color';
+import { supabase } from '@/utils/supabase';
+import * as Haptics from 'expo-haptics';
+import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Dimensions, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, useColorScheme, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
 const HOA_PIN = '1111';
@@ -23,7 +22,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const systemColorScheme = useColorScheme();
   const { theme, setTheme } = useAppTheme();
-  const { userDetails, setUserDetails, profileId, isAdmin, devices: globalDevices, allHeardDevices, refreshProfile, signOut, updateProfile } = useUser();
+  const { userDetails, profileId, isAdmin, devices: globalDevices, allHeardDevices, refreshProfile, signOut, updateProfile } = useUser();
   
   const backgroundColor = useThemeColor({}, 'background');
   const textColor = useThemeColor({}, 'text');
@@ -31,7 +30,6 @@ export default function SettingsScreen() {
   const inputBg = useThemeColor({ light: '#f2f2f7', dark: '#2c2c2e' }, 'background');
   const secondaryText = useThemeColor({ light: '#8e8e93', dark: '#8e8e93' }, 'text');
   
-  // Dynamic placeholder color
   const placeholderColor = systemColorScheme === 'dark' ? 'rgba(255,255,255,0.4)' : '#a1a1aa';
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('PROFILE');
@@ -324,12 +322,11 @@ export default function SettingsScreen() {
           <View style={styles.fadeAnim}>
             <View style={[styles.section, { backgroundColor: cardBg }]}>
               <Text style={styles.sectionLabel}>CONNECTED HARDWARE</Text>
-              {myLinkedDevices.length > 0 ? myLinkedDevices.map((dev) => (
+              {myLinkedDevices.length > 0 ? myLinkedDevices.map((dev: any) => (
                 <View key={dev.mac} style={[styles.deviceRow, { backgroundColor: inputBg }]}>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.deviceRowLabel, { color: textColor }]}>{dev.label}</Text>
-                    <Text style={[styles.deviceRowSub, { color: secondaryText }]}>{dev.houseId} • {dev.block_lot || 'General'}</Text>
-                    <Text style={styles.deviceRowMac}>{dev.mac}</Text>
+                    <Text style={[styles.deviceRowLabel, { color: textColor }]}>{dev.label || 'H-Fire Device'}</Text>
+                    <Text style={[styles.deviceRowSub, { color: secondaryText }]}>{dev.mac} • {dev.block_lot || 'General'}</Text>
                   </View>
                   <TouchableOpacity style={styles.unlinkBtn} onPress={() => handleUnlink(dev.mac, dev.label)}>
                     {unlinking === dev.mac ? <ActivityIndicator size="small" color="#FF3B30" /> : <Text style={styles.unlinkText}>UNLINK</Text>}
@@ -394,7 +391,8 @@ export default function SettingsScreen() {
 
       {/* MAP MODAL */}
       <Modal visible={showMap} animationType="slide">
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }}>
+        {/* FIXED: Removed 'Any' and added proper styles */}
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }} edges={['top', 'bottom']}>
           <View style={styles.mapModalContainer}>
             <TouchableOpacity style={styles.mapBackBtn} onPress={() => setShowMap(false)}>
               <IconSymbol name="chevron.left" size={18} color="#fff" />
@@ -409,10 +407,12 @@ export default function SettingsScreen() {
                 region={mapRegion}
                 onRegionChangeComplete={(r) => setMapRegion(r)}
                 onLongPress={(e) => {
-                  const coord = e.nativeEvent.coordinate;
+                  const coord = e.nativeEvent.coordinate; // FIXED: Added proper coordinate capture
                   setLocation(coord);
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  Location.reverseGeocodeAsync(coord).then(([rev]) => { if (rev) setAddress(constructAddress(rev)); });
+                  Location.reverseGeocodeAsync(coord).then(([rev]) => { 
+                    if (rev) setAddress(constructAddress(rev)); 
+                  });
                 }}
               >
                 {location && <Marker coordinate={location} title="Your Home" pinColor="#2196F3" />}

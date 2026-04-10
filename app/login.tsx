@@ -1,29 +1,29 @@
-import React, { useState, useRef, useEffect } from 'react';
+import MapView, { Marker } from '@/components/Map';
+import { useUser } from '@/context/UserContext';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useThemeColor } from '@/hooks/use-theme-color';
+import { useOAuth, useSignIn } from '@clerk/clerk-expo';
+import { FontAwesome } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import * as Linking from 'expo-linking';
+import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import * as WebBrowser from 'expo-web-browser';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Animated,
+  Dimensions,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   StyleSheet,
-  View,
   Text,
   TextInput,
   TouchableOpacity,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Dimensions,
-  Animated,
-  ScrollView,
+  View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import * as Haptics from 'expo-haptics';
-import * as Location from 'expo-location';
-import MapView, { Marker } from '@/components/Map';
-import { FontAwesome } from '@expo/vector-icons';
-import { useUser } from '@/context/UserContext';
-import { useSignIn, useOAuth } from '@clerk/clerk-expo';
-import * as WebBrowser from 'expo-web-browser';
-import * as Linking from 'expo-linking';
-import { useThemeColor } from '@/hooks/use-theme-color';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const { width } = Dimensions.get('window');
 const ACCENT = '#2196F3';
@@ -241,7 +241,7 @@ export default function LoginScreen() {
             <View style={{ gap: 10 }}>
               <InputField label="Detailed Household Address" placeholder="House No., Street, etc." maxLength={250} value={address} onChangeText={setAddress} multiline {...sharedProps} />
               <View style={{ height: 300, borderRadius: 16, overflow: 'hidden' }}>
-                <MapView ref={mapRef} style={StyleSheet.absoluteFill} initialRegion={{ latitude: location?.latitude || 14.5995, longitude: location?.longitude || 120.9842, latitudeDelta: 0.01, longitudeDelta: 0.01 }} onPress={(e) => handleMapPress(e.nativeEvent.coordinate)}>
+                <MapView ref={mapRef} style={StyleSheet.absoluteFill} initialRegion={{ latitude: location?.latitude || 14.5995, longitude: location?.longitude || 120.9842, latitudeDelta: 0.01, longitudeDelta: 0.01 }} onPress={(e: any) => handleMapPress(e.nativeEvent.coordinate)}>
                   {location && <Marker coordinate={location} title="Your Location" />}
                 </MapView>
                 <TouchableOpacity style={styles.locationBtn} onPress={getCurrentLocation}>
