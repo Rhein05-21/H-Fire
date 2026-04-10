@@ -2,7 +2,7 @@
   "expo": {
     "name": "Fire/Gas Leak Monitoring",
     "slug": "h-fire",
-    "version": "1.0.1",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/H-Fire _logo.png",
     "scheme": "hfire",
