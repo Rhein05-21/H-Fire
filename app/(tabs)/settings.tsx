@@ -242,47 +242,66 @@ export default function SettingsScreen() {
             <View style={[styles.section, { backgroundColor: cardBg }]}>
               <Text style={styles.sectionLabel}>PERSONAL INFORMATION</Text>
               <View style={styles.inputGroup}>
-                <TextInput 
-                  style={[styles.input, { backgroundColor: inputBg, color: textColor }]} 
-                  value={firstName} 
-                  onChangeText={setFirstName} 
-                  placeholder="First Name" 
-                  placeholderTextColor={placeholderColor}
-                  maxLength={50} 
-                />
-                <TextInput 
-                  style={[styles.input, { backgroundColor: inputBg, color: textColor }]} 
-                  value={middleName} 
-                  onChangeText={setMiddleName} 
-                  placeholder="Middle Name (Optional)" 
-                  placeholderTextColor={placeholderColor}
-                  maxLength={50} 
-                />
-                <TextInput 
-                  style={[styles.input, { backgroundColor: inputBg, color: textColor }]} 
-                  value={lastName} 
-                  onChangeText={setLastName} 
-                  placeholder="Last Name" 
-                  placeholderTextColor={placeholderColor}
-                  maxLength={50} 
-                />
-                <TextInput 
-                  style={[styles.input, { backgroundColor: inputBg, color: textColor }]} 
-                  value={community} 
-                  onChangeText={setCommunity} 
-                  placeholder="Community / Block" 
-                  placeholderTextColor={placeholderColor}
-                  maxLength={100} 
-                />
-                <TextInput 
-                  style={[styles.input, { backgroundColor: inputBg, color: textColor }]} 
-                  value={address} 
-                  onChangeText={setAddress} 
-                  placeholder="Detailed Address" 
-                  placeholderTextColor={placeholderColor}
-                  maxLength={250} 
-                  multiline 
-                />
+                <View>
+                  <Text style={styles.fieldLabel}>FIRST NAME</Text>
+                  <TextInput 
+                    style={[styles.input, { backgroundColor: inputBg, color: textColor }]} 
+                    value={firstName} 
+                    onChangeText={setFirstName} 
+                    placeholder="Enter first name" 
+                    placeholderTextColor={placeholderColor}
+                    maxLength={50} 
+                  />
+                </View>
+
+                <View>
+                  <Text style={styles.fieldLabel}>MIDDLE NAME (OPTIONAL)</Text>
+                  <TextInput 
+                    style={[styles.input, { backgroundColor: inputBg, color: textColor }]} 
+                    value={middleName} 
+                    onChangeText={setMiddleName} 
+                    placeholder="Enter middle name" 
+                    placeholderTextColor={placeholderColor}
+                    maxLength={50} 
+                  />
+                </View>
+
+                <View>
+                  <Text style={styles.fieldLabel}>LAST NAME</Text>
+                  <TextInput 
+                    style={[styles.input, { backgroundColor: inputBg, color: textColor }]} 
+                    value={lastName} 
+                    onChangeText={setLastName} 
+                    placeholder="Enter last name" 
+                    placeholderTextColor={placeholderColor}
+                    maxLength={50} 
+                  />
+                </View>
+
+                <View>
+                  <Text style={styles.fieldLabel}>COMMUNITY / BLOCK & LOT</Text>
+                  <TextInput 
+                    style={[styles.input, { backgroundColor: inputBg, color: textColor }]} 
+                    value={community} 
+                    onChangeText={setCommunity} 
+                    placeholder="e.g. Block 1 Lot 1" 
+                    placeholderTextColor={placeholderColor}
+                    maxLength={100} 
+                  />
+                </View>
+
+                <View>
+                  <Text style={styles.fieldLabel}>DETAILED HOUSEHOLD ADDRESS</Text>
+                  <TextInput 
+                    style={[styles.input, { backgroundColor: inputBg, color: textColor }]} 
+                    value={address} 
+                    onChangeText={setAddress} 
+                    placeholder="House No., Street name, etc." 
+                    placeholderTextColor={placeholderColor}
+                    maxLength={250} 
+                    multiline 
+                  />
+                </View>
               </View>
 
               <TouchableOpacity style={[styles.locBtn, { backgroundColor: inputBg }]} onPress={openMapModal}>
@@ -515,7 +534,8 @@ const styles = StyleSheet.create({
   fadeAnim: { flex: 1 },
   section: { borderRadius: 24, padding: 20, marginBottom: 20, ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10 }, android: { elevation: 2 } }) },
   sectionLabel: { fontSize: 11, fontWeight: '900', color: '#8e8e93', marginBottom: 15, letterSpacing: 1 },
-  inputGroup: { gap: 10, marginBottom: 15 },
+  fieldLabel: { fontSize: 10, fontWeight: '800', color: '#8e8e93', marginLeft: 4, marginBottom: 4, letterSpacing: 0.5 },
+  inputGroup: { gap: 15, marginBottom: 15 },
   input: { borderRadius: 14, padding: 16, fontSize: 16, fontWeight: '600' },
   locBtn: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 14, marginBottom: 20 },
   locBtnText: { marginLeft: 10, fontWeight: '700', fontSize: 15 },
