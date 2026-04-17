@@ -12,6 +12,7 @@ import {
   Animated,
   Alert,
   ScrollView,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -145,7 +146,11 @@ export default function ForgotPasswordScreen() {
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={styles.brandRow}>
-          <Text style={styles.logo}>🔐</Text>
+          <Image 
+            source={require('@/assets/images/h-fire_logo.png')} 
+            style={styles.logoImage} 
+            resizeMode="contain"
+          />
           <Text style={[styles.brandTitle, { color: textColor }]}>H-FIRE</Text>
           <Text style={styles.brandSub}>RESET PASSWORD</Text>
         </View>
@@ -226,7 +231,7 @@ const styles = StyleSheet.create({
   bgTop: { position: 'absolute', top: -100, left: -80, width: 350, height: 350, borderRadius: 175 },
   bgBottom: { position: 'absolute', bottom: -80, right: -80, width: 300, height: 300, borderRadius: 150 },
   brandRow: { alignItems: 'center', marginBottom: 20 },
-  logo: { fontSize: 64, marginBottom: 10 },
+  logoImage: { width: 100, height: 100, marginBottom: 10 },
   brandTitle: { fontSize: 28, fontWeight: '900', letterSpacing: 4, textAlign: 'center' },
   brandSub: { color: ACCENT, fontSize: 12, fontWeight: '900', letterSpacing: 4, marginTop: 4 },
   subtitle: { fontSize: 14, textAlign: 'center', marginBottom: 30, lineHeight: 22, maxWidth: width * 0.8 },
