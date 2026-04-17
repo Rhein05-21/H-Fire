@@ -50,7 +50,25 @@ export default function SettingsScreen() {
   const [showMap, setShowMap] = useState(false);
   const [showPinModal, setShowPinModal] = useState(false);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showNoChangesModal, setShowNoChangesModal] = useState(false);
   const [pinInput, setPinInput] = useState('');
+
+  // DETECT IF FORM HAS CHANGES
+  const hasChanges = useMemo(() => {
+    if (!userDetails) return false;
+    const combinedName = `${lastName.trim()}, ${firstName.trim()}${middleName ? ' ' + middleName.trim() : ''}`;
+    const initialLocation = userDetails.latitude && userDetails.longitude ? { latitude: userDetails.latitude, longitude: userDetails.longitude } : null;
+
+    return (
+      combinedName !== (userDetails.name || '') ||
+      community.trim() !== (userDetails.block_lot || '') ||
+      address.trim() !== (userDetails.address || '') ||
+      location?.latitude !== initialLocation?.latitude ||
+      location?.longitude !== initialLocation?.longitude
+    );
+  }, [firstName, middleName, lastName, community, address, location, userDetails]);
+
   const [attempts, setAttempts] = useState(0);
   const [mapRegion, setMapRegion] = useState<{ latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number } | undefined>(undefined);
   const [loadingGps, setLoadingGps] = useState(false);
@@ -70,7 +88,7 @@ export default function SettingsScreen() {
       } else {
         setFirstName(fullName);
       }
-      
+
       setCommunity(userDetails.block_lot || '');
       setAddress(userDetails.address || '');
       if (userDetails.latitude && userDetails.longitude) {
@@ -116,8 +134,21 @@ export default function SettingsScreen() {
     ]);
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!firstName.trim() || !lastName.trim()) return Alert.alert('Error', 'First and Last name are required.');
+
+    if (!hasChanges) {
+      setShowNoChangesModal(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
+    }
+
+    setShowSaveModal(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  const confirmSave = async () => {
+    setShowSaveModal(false);
     setSaving(true);
     try {
       const combinedName = `${lastName.trim()}, ${firstName.trim()}${middleName ? ' ' + middleName.trim() : ''}`;
@@ -128,8 +159,11 @@ export default function SettingsScreen() {
       await supabase.from('devices').update({ house_name: combinedName, block_lot: community }).eq('profile_id', profileId);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Success', 'Profile updated.');
-    } catch (err) { Alert.alert('Error', 'Failed to save.'); }
-    finally { setSaving(false); }
+    } catch (err) { 
+      Alert.alert('Error', 'Failed to save.'); 
+    } finally { 
+      setSaving(false); 
+    }
   };
 
   const handleSignOut = () => {
@@ -224,9 +258,15 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor }]} edges={['top']}>
+      {/* HEADER WITH SIGN OUT BUTTON */}
       <View style={styles.header}>
         <TouchableOpacity onLongPress={() => setShowAdminTab(true)} delayLongPress={3000} activeOpacity={1}>
           <ThemedText type="title" style={styles.title}>Settings</ThemedText>
+        </TouchableOpacity>
+        
+        <TouchableOpacity onPress={handleSignOut} style={styles.headerSignOutBtn}>
+          <IconSymbol name="arrow.left.square.fill" size={16} color="#FF3B30" />
+          <Text style={styles.headerSignOutText}>SIGN OUT</Text>
         </TouchableOpacity>
       </View>
 
@@ -319,7 +359,11 @@ export default function SettingsScreen() {
                 <IconSymbol name="chevron.right" size={14} color={secondaryText} />
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+              <TouchableOpacity 
+                style={styles.saveBtn} 
+                onPress={handleSave}
+                disabled={saving}
+              >
                 {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save Changes</Text>}
               </TouchableOpacity>
             </View>
@@ -335,11 +379,6 @@ export default function SettingsScreen() {
                 ))}
               </View>
             </View>
-
-            <TouchableOpacity style={styles.logoutBtn} onPress={handleSignOut}>
-              <IconSymbol name="arrow.left.square.fill" size={18} color="#FF3B30" />
-              <Text style={styles.logoutText}>Sign Out</Text>
-            </TouchableOpacity>
           </View>
         )}
 
@@ -416,7 +455,6 @@ export default function SettingsScreen() {
 
       {/* MAP MODAL */}
       <Modal visible={showMap} animationType="slide">
-        {/* FIXED: Removed 'Any' and added proper styles */}
         <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }} edges={['top', 'bottom']}>
           <View style={styles.mapModalContainer}>
             <TouchableOpacity style={styles.mapBackBtn} onPress={() => setShowMap(false)}>
@@ -432,7 +470,7 @@ export default function SettingsScreen() {
                 region={mapRegion}
                 onRegionChangeComplete={(r) => setMapRegion(r)}
                 onLongPress={(e) => {
-                  const coord = e.nativeEvent.coordinate; // FIXED: Added proper coordinate capture
+                  const coord = e.nativeEvent.coordinate; 
                   setLocation(coord);
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                   Location.reverseGeocodeAsync(coord).then(([rev]) => { 
@@ -496,9 +534,6 @@ export default function SettingsScreen() {
       <Modal visible={showSignOutModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: cardBg }]}>
-            <View style={styles.modalIconContainer}>
-              <IconSymbol name="arrow.left.square.fill" size={42} color="#FF3B30" />
-            </View>
             <Text style={[styles.modalTitle, { color: textColor }]}>Sign Out</Text>
             <Text style={[styles.modalMessage, { color: secondaryText }]}>Are you sure you want to sign out? You will need to log in again to monitor your devices.</Text>
             
@@ -519,13 +554,85 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* SAVE CONFIRMATION MODAL */}
+      <Modal visible={showSaveModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: cardBg }]}>
+            <View style={[styles.modalIconContainer, { backgroundColor: 'rgba(33, 150, 243, 0.1)' }]}>
+              <IconSymbol name="checkmark.circle.fill" size={42} color="#2196F3" />
+            </View>
+            <Text style={[styles.modalTitle, { color: textColor }]}>Save Changes</Text>
+            <Text style={[styles.modalMessage, { color: secondaryText }]}>Are you sure you want to update your profile information? This will also update your household details for emergency responders.</Text>
+            
+            <View style={styles.modalActions}>
+              <TouchableOpacity 
+                style={[styles.modalBtn, { backgroundColor: inputBg }]} 
+                onPress={() => setShowSaveModal(false)}
+              >
+                <Text style={[styles.modalBtnText, { color: textColor }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalBtn, { backgroundColor: '#2196F3' }]} 
+                onPress={confirmSave}
+              >
+                <Text style={[styles.modalBtnText, { color: '#fff' }]}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* NO CHANGES MODAL */}
+      <Modal visible={showNoChangesModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: cardBg }]}>
+            <Text style={[styles.modalTitle, { color: textColor }]}>No Changes</Text>
+            <Text style={[styles.modalMessage, { color: secondaryText }]}>You haven't modified any information yet. Please update a field before saving.</Text>
+            
+            <View style={styles.modalActions}>
+              <TouchableOpacity 
+                style={[styles.modalBtn, { backgroundColor: '#FF9800' }]} 
+                onPress={() => setShowNoChangesModal(false)}
+              >
+                <Text style={[styles.modalBtnText, { color: '#fff' }]}>Understood</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 25, paddingTop: 20 },
+  // UPDATED HEADER AND ICON STYLES FOR FIXING THE SQUISHED BOX
+  header: { 
+    paddingHorizontal: 25, 
+    paddingTop: 20, 
+    paddingBottom: 10,
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center' 
+  },
+  headerSignOutBtn: { 
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255, 59, 48, 0.08)', 
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 59, 48, 0.15)'
+  },
+  headerSignOutText: {
+    color: '#FF3B30',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5
+  },
   title: { fontSize: 34, fontWeight: '900' },
   tabContainer: { flexDirection: 'row', paddingHorizontal: 25, marginTop: 20, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.05)' },
   tabButton: { paddingVertical: 12, marginRight: 25 },
@@ -558,8 +665,6 @@ const styles = StyleSheet.create({
   foundHouse: { fontSize: 10, color: '#8e8e93', marginTop: 2 },
   adminEntryBtn: { backgroundColor: '#1a1a1a', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 18, borderRadius: 15 },
   adminEntryText: { color: '#fff', fontWeight: '900', fontSize: 15, marginLeft: 10 },
-  logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 18, backgroundColor: 'rgba(255, 59, 48, 0.1)', borderRadius: 15, marginBottom: 20, borderWidth: 1, borderColor: 'rgba(255, 59, 48, 0.2)' },
-  logoutText: { color: '#FF3B30', fontWeight: '900', fontSize: 16 },
   pinOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)' },
   pinContent: { width: width * 0.8 },
   pinCard: { padding: 30, borderRadius: 25, alignItems: 'center' },
