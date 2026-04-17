@@ -7,6 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import React, { useEffect, useState } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Updates from 'expo-updates';
 import { View, Image, StyleSheet, Animated, ActivityIndicator } from 'react-native';
 import { supabase } from '@/utils/supabase';
 import { ThemeProvider, useAppTheme } from '@/context/ThemeContext';
@@ -74,6 +75,22 @@ function RootLayoutContent() {
   const fadeAnim = React.useRef(new Animated.Value(1)).current;
 
   usePushNotifications(profileId);
+
+  // --- OTA UPDATE LOGIC ---
+  useEffect(() => {
+    async function onFetchUpdateAsync() {
+      try {
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
+        }
+      } catch (error) {
+        // Silently fail, or log to Sentry if needed
+      }
+    }
+    if (!__DEV__) onFetchUpdateAsync();
+  }, []);
 
   useEffect(() => {
     if (!profileId) return;
