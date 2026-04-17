@@ -559,9 +559,6 @@ export default function SettingsScreen() {
       <Modal visible={showSaveModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: cardBg }]}>
-            <View style={[styles.modalIconContainer, { backgroundColor: 'rgba(33, 150, 243, 0.1)' }]}>
-              <IconSymbol name="checkmark.circle.fill" size={42} color="#2196F3" />
-            </View>
             <Text style={[styles.modalTitle, { color: textColor }]}>Save Changes</Text>
             <Text style={[styles.modalMessage, { color: secondaryText }]}>Are you sure you want to update your profile information? This will also update your household details for emergency responders.</Text>
             
