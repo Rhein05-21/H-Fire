@@ -49,6 +49,7 @@ export default function SettingsScreen() {
 
   const [showMap, setShowMap] = useState(false);
   const [showPinModal, setShowPinModal] = useState(false);
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [attempts, setAttempts] = useState(0);
   const [mapRegion, setMapRegion] = useState<{ latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number } | undefined>(undefined);
@@ -132,13 +133,18 @@ export default function SettingsScreen() {
   };
 
   const handleSignOut = () => {
-    Alert.alert('Sign Out', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: async () => {
-        try { await signOut(); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }
-        catch (e) { Alert.alert('Error', 'Failed to sign out.'); }
-      }},
-    ]);
+    setShowSignOutModal(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  const confirmSignOut = async () => {
+    setShowSignOutModal(false);
+    try { 
+      await signOut(); 
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); 
+    } catch (e) { 
+      Alert.alert('Error', 'Failed to sign out.'); 
+    }
   };
 
   const constructAddress = (rev: Location.LocationGeocodedAddress) => {
@@ -466,6 +472,34 @@ export default function SettingsScreen() {
           </KeyboardAvoidingView>
         </View>
       </Modal>
+
+      {/* SIGN OUT MODAL */}
+      <Modal visible={showSignOutModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: cardBg }]}>
+            <View style={styles.modalIconContainer}>
+              <IconSymbol name="arrow.left.square.fill" size={42} color="#FF3B30" />
+            </View>
+            <Text style={[styles.modalTitle, { color: textColor }]}>Sign Out</Text>
+            <Text style={[styles.modalMessage, { color: secondaryText }]}>Are you sure you want to sign out? You will need to log in again to monitor your devices.</Text>
+            
+            <View style={styles.modalActions}>
+              <TouchableOpacity 
+                style={[styles.modalBtn, { backgroundColor: inputBg }]} 
+                onPress={() => setShowSignOutModal(false)}
+              >
+                <Text style={[styles.modalBtnText, { color: textColor }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalBtn, { backgroundColor: '#FF3B30' }]} 
+                onPress={confirmSignOut}
+              >
+                <Text style={[styles.modalBtnText, { color: '#fff' }]}>Sign Out</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -525,5 +559,13 @@ const styles = StyleSheet.create({
   mapLocateBtnText: { color: '#2196F3', fontWeight: '900', fontSize: 13 },
   mapConfirmBtn: { flex: 1, backgroundColor: '#2196F3', padding: 16, borderRadius: 15, alignItems: 'center' },
   mapConfirmText: { color: '#fff', fontSize: 15, fontWeight: '900' },
-  locDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#34C759', marginLeft: 8 }
+  locDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#34C759', marginLeft: 8 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalCard: { width: '100%', maxWidth: 340, borderRadius: 28, padding: 25, alignItems: 'center', elevation: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 20 },
+  modalIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(255, 59, 48, 0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 22, fontWeight: '900', marginBottom: 10 },
+  modalMessage: { fontSize: 15, fontWeight: '600', textAlign: 'center', lineHeight: 22, marginBottom: 25, paddingHorizontal: 10 },
+  modalActions: { flexDirection: 'row', gap: 12, width: '100%' },
+  modalBtn: { flex: 1, paddingVertical: 16, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  modalBtnText: { fontSize: 15, fontWeight: '800' }
 });
