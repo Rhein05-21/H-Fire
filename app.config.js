@@ -6,7 +6,7 @@ export default {
     "slug": "h-fireresidentmonitor",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/H-Fire _logo.png",
+    "icon": "./assets/images/h-fire_logo.png",
     "scheme": "hfire",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -26,7 +26,7 @@ export default {
       "package": "com.tigle.hfire",
       "adaptiveIcon": {
         "backgroundColor": "#121212",
-        "foregroundImage": "./assets/images/H-Fire _logo.png",
+        "foregroundImage": "./assets/images/h-fire_logo.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
@@ -44,10 +44,11 @@ export default {
     },
     "plugins": [
       "expo-router",
+      "@react-native-google-signin/google-signin",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/H-Fire _logo.png",
+          "image": "./assets/images/h-fire_logo.png",
           "imageWidth": 300,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
@@ -64,7 +65,8 @@ export default {
     "extra": {
       "eas": {
         "projectId": "7e955f47-b77e-4f62-8949-51ad7e53911f"
-      }
+      },
+      "clerkProxyUrl": "https://valued-vulture-7.clerk.accounts.dev"
     }
   }
 };

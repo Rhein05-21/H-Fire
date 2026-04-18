@@ -28,10 +28,11 @@
     "plugins": [
       "expo-router",
       "expo-updates",
+      "@react-native-google-signin/google-signin",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/H-Fire _logo.png",
+          "image": "./assets/images/h-fire_logo.png",
           "imageWidth": 300,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
@@ -50,6 +51,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "7e955f47-b77e-4f62-8949-51ad7e53911f"
+      },
+      "clerkProxyUrl": "https://valued-vulture-7.clerk.accounts.dev"
     }
   }
 }

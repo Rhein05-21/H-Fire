@@ -59,7 +59,6 @@ export default function LoginScreen() {
   const { signIn, setActive, isLoaded: signInLoaded } = useSignIn();
   
   const { startOAuthFlow: startGoogleFlow } = useOAuth({ strategy: "oauth_google" });
-  const { startOAuthFlow: startFacebookFlow } = useOAuth({ strategy: "oauth_facebook" });
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -279,14 +278,16 @@ export default function LoginScreen() {
 
           {!isProfilePending && (
             <>
+              <View style={styles.orRow}>
+                <View style={styles.orLine} />
+                <Text style={[styles.orText, { color: subtitleColor }]}>OR</Text>
+                <View style={styles.orLine} />
+              </View>
+
               <View style={styles.socialRow}>
                 <TouchableOpacity style={[styles.socialBtn, { backgroundColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', borderColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]} onPress={() => handleSocialLogin('google')}>
                   <FontAwesome name="google" size={24} color={textColor} />
                   <Text style={[styles.socialBtnText, { color: textColor }]}>Google</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.socialBtn, { backgroundColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', borderColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]} onPress={() => handleSocialLogin('facebook')}>
-                  <FontAwesome name="facebook" size={24} color={textColor} />
-                  <Text style={[styles.socialBtnText, { color: textColor }]}>Facebook</Text>
                 </TouchableOpacity>
               </View>
               <View style={styles.linksRow}>
@@ -329,6 +330,9 @@ const styles = StyleSheet.create({
   signupToggle: { marginTop: 20, alignItems: 'center' },
   toggleBtnText: { fontSize: 14, fontWeight: '600' },
   errorText: { color: '#FF3B30', fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  orRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 15, paddingHorizontal: 10 },
+  orLine: { flex: 1, height: 1, backgroundColor: 'rgba(0,0,0,0.1)' },
+  orText: { marginHorizontal: 15, fontSize: 13, fontWeight: '800', letterSpacing: 1 },
   locationBtn: { position: 'absolute', bottom: 10, alignSelf: 'center', backgroundColor: ACCENT, borderRadius: 20, paddingHorizontal: 15, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 5 },
   locationBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   backToLoginBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 10, gap: 8, marginTop: 5 },
