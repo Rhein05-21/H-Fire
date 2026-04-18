@@ -18,7 +18,7 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
-import MapView, { Marker } from '@/components/Map';
+import MapView, { Marker, PROVIDER_GOOGLE } from '@/components/Map';
 import { useUser } from '@/context/UserContext';
 import { useSignUp } from '@clerk/clerk-expo';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -239,7 +239,13 @@ export default function SignupScreen() {
             <View style={{ gap: 10 }}>
               <InputField label="Detailed Household Address" placeholder="House No., Street, etc." maxLength={250} value={address} onChangeText={setAddress} multiline {...sharedProps} />
               <View style={{ height: 300, borderRadius: 16, overflow: 'hidden', marginTop: 5 }}>
-                <MapView ref={mapRef} style={StyleSheet.absoluteFill} initialRegion={{ latitude: location?.latitude || 14.5995, longitude: location?.longitude || 120.9842, latitudeDelta: 0.01, longitudeDelta: 0.01 }} onPress={(e) => handleMapPress(e.nativeEvent.coordinate)}>
+                <MapView 
+                  ref={mapRef} 
+                  provider={PROVIDER_GOOGLE}
+                  style={StyleSheet.absoluteFill} 
+                  initialRegion={{ latitude: location?.latitude || 14.5995, longitude: location?.longitude || 120.9842, latitudeDelta: 0.01, longitudeDelta: 0.01 }} 
+                  onPress={(e) => handleMapPress(e.nativeEvent.coordinate)}
+                >
                   {location && <Marker coordinate={location} title="Your Location" />}
                 </MapView>
                 <TouchableOpacity style={styles.locationBtn} onPress={getCurrentLocation}>

@@ -3,7 +3,7 @@ import 'dotenv/config';
 export default {
   "expo": {
     "name": "H-Fire: Fire/Gas Leak Monitoring System",
-    "slug": "h-fire",
+    "slug": "h-fireresidentmonitor",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/H-Fire _logo.png",
@@ -11,7 +11,7 @@ export default {
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "updates": {
-      "url": "https://u.expo.dev/abab58f3-55e3-4c98-8a06-51a6412d1ff2"
+      "url": "https://u.expo.dev/7e955f47-b77e-4f62-8949-51ad7e53911f"
     },
     "runtimeVersion": {
       "policy": "appVersion"
@@ -63,7 +63,7 @@ export default {
     },
     "extra": {
       "eas": {
-        "projectId": "abab58f3-55e3-4c98-8a06-51a6412d1ff2"
+        "projectId": "7e955f47-b77e-4f62-8949-51ad7e53911f"
       }
     }
   }
