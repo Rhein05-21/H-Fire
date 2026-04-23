@@ -25,6 +25,8 @@ const MapView = React.forwardRef(({ style, children }: any, ref: any) => {
   );
 });
 
+MapView.displayName = 'MapView';
+
 const styles = StyleSheet.create({
   placeholder: {
     backgroundColor: '#1a1a1a',

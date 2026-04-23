@@ -280,7 +280,7 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               </View>
               <TouchableOpacity style={styles.signupToggle} onPress={() => router.push('/signup')}>
-                <Text style={[styles.toggleBtnText, { color: subtitleColor }]}>Don't have an account? <Text style={{ color: ACCENT }}>Sign Up</Text></Text>
+                <Text style={[styles.toggleBtnText, { color: subtitleColor }]}>Don&apos;t have an account? <Text style={{ color: ACCENT }}>Sign Up</Text></Text>
               </TouchableOpacity>
             </>
           )}
