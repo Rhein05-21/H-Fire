@@ -230,7 +230,25 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     client.on('connect', () => client.subscribe('hfire/#'));
     client.on('message', (receivedTopic, message) => {
       try {
-        const data = JSON.parse(message.toString());
+        const payload = message.toString();
+        let data;
+
+        try {
+          data = JSON.parse(payload);
+        } catch (e) {
+          // FALLBACK: Try parsing as comma-separated values (MAC,PPM,FLAME)
+          const parts = payload.split(',');
+          if (parts.length >= 2) {
+            data = {
+              mac: parts[0].trim(),
+              ppm: Number(parts[1].trim()),
+              status: parts[2] ? (parts[2].trim() === '1' || parts[2].trim() === 'true' ? 'Warning' : 'Normal') : 'Normal'
+            };
+          } else {
+            return; // Ignore malformed non-JSON
+          }
+        }
+
         const mac = data.mac;
         if (!mac) return;
         
@@ -249,7 +267,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             lastSeen: new Date()
           }
         }));
-      } catch (e) {}
+      } catch (e) {
+        console.error('MQTT direct parse error:', e);
+      }
     });
     return () => { client.end(); };
   }, [profileId]);
