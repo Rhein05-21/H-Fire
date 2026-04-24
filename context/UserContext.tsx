@@ -101,7 +101,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     const mine: Record<string, Device> = {};
     if (!profileId) return mine;
     Object.values(allHeardDevices).forEach(dev => {
-      const regInfo = registry[dev.mac];
+      // Normalize MACs to uppercase for reliable matching
+      const devMac = dev.mac.toUpperCase();
+      const regInfo = Object.values(registry).find(r => r.mac.toUpperCase() === devMac);
+      
       if (regInfo && regInfo.profile_id === profileId) {
         mine[dev.mac] = { ...dev, label: regInfo.label, houseId: regInfo.house_name, block_lot: regInfo.block_lot };
       }
@@ -139,7 +142,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       const { data: reg } = await supabase.from('devices').select('*');
       if (reg) {
         const cache: any = {};
-        reg.forEach(d => { cache[d.mac] = d; });
+        reg.forEach(d => { cache[d.mac] = d; }); // Store by original key
         setRegistry(cache);
         registryRef.current = cache;
       }
@@ -216,13 +219,18 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         const data = JSON.parse(message.toString());
         const mac = data.mac;
         if (!mac) return;
+        
+        // Normalize the heard MAC
+        const normalizedMac = mac.toUpperCase();
+        
         setAllHeardDevices(prev => ({
           ...prev,
-          [mac]: {
-            id: mac, mac,
+          [normalizedMac]: {
+            id: normalizedMac, 
+            mac: normalizedMac,
             ppm: data.ppm || 0,
             status: data.status || 'Normal',
-            label: `Device ${mac.slice(-4)}`,
+            label: `Device ${normalizedMac.slice(-4)}`,
             houseId: receivedTopic.split('/')[1],
             lastSeen: new Date()
           }
