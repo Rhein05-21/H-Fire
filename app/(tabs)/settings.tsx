@@ -62,7 +62,7 @@ export default function SettingsScreen() {
 
     return (
       combinedName !== (userDetails.name || '') ||
-      community.trim() !== (userDetails.block_lot || '') ||
+      community.trim() !== (userDetails.community || '') ||
       address.trim() !== (userDetails.address || '') ||
       location?.latitude !== initialLocation?.latitude ||
       location?.longitude !== initialLocation?.longitude
@@ -89,7 +89,7 @@ export default function SettingsScreen() {
         setFirstName(fullName);
       }
 
-      setCommunity(userDetails.block_lot || '');
+      setCommunity(userDetails.community || '');
       setAddress(userDetails.address || '');
       if (userDetails.latitude && userDetails.longitude) {
         setLocation({ latitude: userDetails.latitude, longitude: userDetails.longitude });
@@ -113,7 +113,11 @@ export default function SettingsScreen() {
   const linkDevice = async (mac: string) => {
     try {
       const combinedName = `${lastName.trim()}, ${firstName.trim()}${middleName ? ' ' + middleName.trim() : ''}`;
-      const { error } = await supabase.from('devices').update({ profile_id: profileId, house_name: combinedName || 'Unnamed House', community: community || 'General' }).eq('mac', mac);
+      const { error } = await supabase.from('devices').update({ 
+        profile_id: profileId, 
+        house_name: combinedName || 'Unnamed House', 
+        community: community || 'General' 
+      }).eq('mac', mac);
       if (error) throw error;
       await refreshProfile();
       setAvailableDevices(prev => prev.filter(d => d.mac !== mac));
@@ -152,11 +156,11 @@ export default function SettingsScreen() {
     setSaving(true);
     try {
       const combinedName = `${lastName.trim()}, ${firstName.trim()}${middleName ? ' ' + middleName.trim() : ''}`;
-      const details = { name: combinedName, block_lot: community, address: address.trim(), latitude: location?.latitude, longitude: location?.longitude };
+      const details = { name: combinedName, community: community, address: address.trim(), latitude: location?.latitude, longitude: location?.longitude };
       const { error } = await updateProfile(details);
       if (error) throw error;
       
-      await supabase.from('devices').update({ house_name: combinedName, block_lot: community }).eq('profile_id', profileId);
+      await supabase.from('devices').update({ house_name: combinedName, community: community }).eq('profile_id', profileId);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Success', 'Profile updated.');
     } catch (err) { 

@@ -7,7 +7,7 @@ import { useAuth, useUser as useClerkUser, useSignIn, useSignUp } from '@clerk/c
 
 interface UserDetails {
   name: string; 
-  block_lot: string; // Changed from community
+  community: string; // Aligned with DB
   address?: string; 
   latitude?: number; 
   longitude?: number; 
@@ -19,7 +19,7 @@ interface Incident {
 }
 
 export interface Device {
-  id: string; mac: string; ppm: number; status: string; label: string; houseId: string; block_lot?: string; lastSeen: Date; profile_id?: string | null;
+  id: string; mac: string; ppm: number; status: string; label: string; houseId: string; community?: string; lastSeen: Date; profile_id?: string | null;
 }
 
 interface UserContextType {
@@ -45,7 +45,7 @@ const UserContext = createContext<UserContextType | undefined>(undefined);
 const HIVEMQ_URL = `wss://${process.env.EXPO_PUBLIC_HIVEMQ_BROKER}:${process.env.EXPO_PUBLIC_HIVEMQ_PORT}/mqtt`;
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
-  const { isLoaded, userId, sessionId, signOut: clerkSignOut } = useAuth();
+  const { isLoaded, userId, sessionId, getToken, signOut: clerkSignOut } = useAuth();
   
   const [userDetails, setUserDetailsState] = useState<UserDetails | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
@@ -68,10 +68,26 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const registryRef = useRef<Record<string, any>>({});
 
   useEffect(() => {
+    const syncAuth = async () => {
+      if (userId) {
+        try {
+          const token = await getToken({ template: 'supabase' });
+          if (token) {
+            await supabase.auth.setSession({
+              access_token: token,
+              refresh_token: '',
+            });
+          }
+        } catch (e) {
+          console.error('Error syncing Clerk with Supabase:', e);
+        }
+      }
+    };
+
     if (isLoaded) {
       if (userId) {
         setProfileId(userId);
-        refreshProfile(userId);
+        syncAuth().then(() => refreshProfile(userId));
       } else {
         setProfileId(null);
         setUserDetailsState(null);
@@ -87,7 +103,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     Object.values(allHeardDevices).forEach(dev => {
       const regInfo = registry[dev.mac];
       if (regInfo && regInfo.profile_id === profileId) {
-        mine[dev.mac] = { ...dev, label: regInfo.label, houseId: regInfo.house_name, block_lot: regInfo.block_lot };
+        mine[dev.mac] = { ...dev, label: regInfo.label, houseId: regInfo.house_name, community: regInfo.community };
       }
     });
     return mine;
@@ -104,7 +120,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       if (dbProfile) {
         const profileData: UserDetails = { 
           name: dbProfile.name, 
-          block_lot: dbProfile.block_lot, // Map to new field
+          community: dbProfile.community, 
           address: dbProfile.address,
           latitude: dbProfile.latitude, 
           longitude: dbProfile.longitude,
@@ -133,7 +149,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     setLoading(true);
-    try { await clerkSignOut(); } catch (e) {}
+    try { 
+      await clerkSignOut(); 
+      await supabase.auth.signOut();
+    } catch (e) {}
     setProfileId(null);
     setUserDetailsState(null);
     setIsAdmin(false);
@@ -146,7 +165,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.from('profiles').upsert({
       id: profileId,
       name: details.name,
-      block_lot: details.block_lot, // Use new column name
+      community: details.community, 
       address: details.address,
       latitude: details.latitude,
       longitude: details.longitude,
