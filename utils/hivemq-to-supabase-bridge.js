@@ -119,23 +119,39 @@ function validatePayload(data) {
 
 async function processMessage(topic, payload) {
   let mac, ppm, flame;
+  let data;
+
   try {
-    const data = JSON.parse(payload);
-    
-    // FIX: Validate payload before processing
-    const validation = validatePayload(data);
-    if (!validation.valid) {
-      console.warn(`⚠️ Rejected payload: ${validation.reason}`);
-      return;
-    }
-    
-    mac = data.mac;
-    ppm = Number(data.ppm);
-    flame = data.flame === true;
+    data = JSON.parse(payload);
   } catch (e) {
-    console.warn('⚠️ Rejected non-JSON payload');
-    return; 
+    // FALLBACK: Try parsing as comma-separated values (MAC,PPM,FLAME)
+    const parts = payload.split(',');
+    if (parts.length >= 2) {
+      data = {
+        mac: parts[0].trim(),
+        ppm: Number(parts[1].trim()),
+        flame: parts[2] ? parts[2].trim() === '1' || parts[2].trim() === 'true' : false
+      };
+      console.log(`💡 [${new Date().toLocaleTimeString()}] Parsed CSV Fallback:`, data);
+    } else {
+      console.warn(`⚠️ Rejected malformed payload: ${payload}`);
+      return; 
+    }
   }
+
+  // Normalize MAC
+  if (data.mac) data.mac = data.mac.toUpperCase();
+  
+  // Validate payload before processing
+  const validation = validatePayload(data);
+  if (!validation.valid) {
+    console.warn(`⚠️ Rejected payload: ${validation.reason}`);
+    return;
+  }
+  
+  mac = data.mac;
+  ppm = Number(data.ppm);
+  flame = data.flame === true;
 
   if (!mac) return;
 
