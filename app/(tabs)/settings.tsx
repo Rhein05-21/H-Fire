@@ -38,7 +38,7 @@ export default function SettingsScreen() {
   const [firstName, setFirstName] = useState('');
   const [middleName, setMiddleName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [community, setCommunity] = useState('');
+  const [blockLot, setBlockLot] = useState('');
   const [address, setAddress] = useState('');
   const [location, setLocation] = useState<{ latitude: number, longitude: number } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -62,12 +62,12 @@ export default function SettingsScreen() {
 
     return (
       combinedName !== (userDetails.name || '') ||
-      community.trim() !== (userDetails.community || '') ||
+      blockLot.trim() !== (userDetails.block_lot || '') ||
       address.trim() !== (userDetails.address || '') ||
       location?.latitude !== initialLocation?.latitude ||
       location?.longitude !== initialLocation?.longitude
     );
-  }, [firstName, middleName, lastName, community, address, location, userDetails]);
+  }, [firstName, middleName, lastName, blockLot, address, location, userDetails]);
 
   const [attempts, setAttempts] = useState(0);
   const [mapRegion, setMapRegion] = useState<{ latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number } | undefined>(undefined);
@@ -89,7 +89,7 @@ export default function SettingsScreen() {
         setFirstName(fullName);
       }
 
-      setCommunity(userDetails.community || '');
+      setBlockLot(userDetails.block_lot || '');
       setAddress(userDetails.address || '');
       if (userDetails.latitude && userDetails.longitude) {
         setLocation({ latitude: userDetails.latitude, longitude: userDetails.longitude });
@@ -116,7 +116,7 @@ export default function SettingsScreen() {
       const { error } = await supabase.from('devices').update({ 
         profile_id: profileId, 
         house_name: combinedName || 'Unnamed House', 
-        community: community || 'General' 
+        block_lot: blockLot || 'General' 
       }).eq('mac', mac);
       if (error) throw error;
       await refreshProfile();
@@ -156,11 +156,11 @@ export default function SettingsScreen() {
     setSaving(true);
     try {
       const combinedName = `${lastName.trim()}, ${firstName.trim()}${middleName ? ' ' + middleName.trim() : ''}`;
-      const details = { name: combinedName, community: community, address: address.trim(), latitude: location?.latitude, longitude: location?.longitude };
+      const details = { name: combinedName, block_lot: blockLot, address: address.trim(), latitude: location?.latitude, longitude: location?.longitude };
       const { error } = await updateProfile(details);
       if (error) throw error;
       
-      await supabase.from('devices').update({ house_name: combinedName, community: community }).eq('profile_id', profileId);
+      await supabase.from('devices').update({ house_name: combinedName, block_lot: blockLot }).eq('profile_id', profileId);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Success', 'Profile updated.');
     } catch (err) { 

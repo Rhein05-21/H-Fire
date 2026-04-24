@@ -7,7 +7,7 @@ import { useAuth, useUser as useClerkUser, useSignIn, useSignUp } from '@clerk/c
 
 interface UserDetails {
   name: string; 
-  community: string; // Aligned with DB
+  block_lot: string; // Reverted to block_lot
   address?: string; 
   latitude?: number; 
   longitude?: number; 
@@ -19,7 +19,7 @@ interface Incident {
 }
 
 export interface Device {
-  id: string; mac: string; ppm: number; status: string; label: string; houseId: string; community?: string; lastSeen: Date; profile_id?: string | null;
+  id: string; mac: string; ppm: number; status: string; label: string; houseId: string; block_lot?: string; lastSeen: Date; profile_id?: string | null;
 }
 
 interface UserContextType {
@@ -103,7 +103,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     Object.values(allHeardDevices).forEach(dev => {
       const regInfo = registry[dev.mac];
       if (regInfo && regInfo.profile_id === profileId) {
-        mine[dev.mac] = { ...dev, label: regInfo.label, houseId: regInfo.house_name, community: regInfo.community };
+        mine[dev.mac] = { ...dev, label: regInfo.label, houseId: regInfo.house_name, block_lot: regInfo.block_lot };
       }
     });
     return mine;
@@ -120,7 +120,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       if (dbProfile) {
         const profileData: UserDetails = { 
           name: dbProfile.name, 
-          community: dbProfile.community, 
+          block_lot: dbProfile.block_lot, 
           address: dbProfile.address,
           latitude: dbProfile.latitude, 
           longitude: dbProfile.longitude,
@@ -165,7 +165,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.from('profiles').upsert({
       id: profileId,
       name: details.name,
-      community: details.community, 
+      block_lot: details.block_lot, 
       address: details.address,
       latitude: details.latitude,
       longitude: details.longitude,

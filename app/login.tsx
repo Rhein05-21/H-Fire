@@ -69,7 +69,7 @@ export default function LoginScreen() {
   const [firstName, setFirstName] = useState('');
   const [middleName, setMiddleName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [community, setCommunity] = useState(''); 
+  const [blockLot, setBlockLot] = useState(''); 
   const [address, setAddress] = useState('');
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
@@ -81,7 +81,7 @@ export default function LoginScreen() {
 
   useEffect(() => {
     if (isAuthenticated && !contextLoading) {
-      if (userDetails && userDetails.name && userDetails.community) {
+      if (userDetails && userDetails.name && userDetails.block_lot) {
         router.replace('/(tabs)');
       } else {
         setIsProfilePending(true);
@@ -100,7 +100,7 @@ export default function LoginScreen() {
         if (profileStep === 1) {
           if (!firstName.trim() || firstName.trim().length < 2) return 'First Name too short';
           if (!lastName.trim() || lastName.trim().length < 2) return 'Last Name too short';
-          if (!community.trim()) return 'Community/Block & Lot required';
+          if (!blockLot.trim()) return 'Block & Lot required';
         } else if (profileStep === 2) {
           if (!location) return 'Location required';
         }
@@ -111,7 +111,7 @@ export default function LoginScreen() {
     const validationError = validate();
     setIsStepValid(validationError === '');
     if (error && validationError === '') setError('');
-  }, [email, password, firstName, lastName, community, location, isProfilePending, profileStep]);
+  }, [email, password, firstName, lastName, blockLot, location, isProfilePending, profileStep]);
 
   const triggerShake = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -166,7 +166,7 @@ export default function LoginScreen() {
       const fullName = `${lastName.trim()}, ${firstName.trim()}${middleName ? ' ' + middleName.trim() : ''}`;
       const { error: updateErr } = await updateProfile({
         name: fullName,
-        community: community.trim(),
+        block_lot: blockLot.trim(),
         latitude: location?.latitude,
         longitude: location?.longitude,
         address: address.trim(),
@@ -243,7 +243,7 @@ export default function LoginScreen() {
               <InputField label="First Name" placeholder="John" maxLength={50} value={firstName} onChangeText={setFirstName} {...sharedProps} />
               <InputField label="Middle Name (Optional)" placeholder="Quincy" maxLength={50} value={middleName} onChangeText={setMiddleName} {...sharedProps} />
               <InputField label="Last Name" placeholder="Doe" maxLength={50} value={lastName} onChangeText={setLastName} {...sharedProps} />
-              <InputField label="Block and Lot Number" placeholder="Block 1 Lot 1" maxLength={100} value={community} onChangeText={setCommunity} {...sharedProps} />
+              <InputField label="Block and Lot Number" placeholder="Block 1 Lot 1" maxLength={100} value={blockLot} onChangeText={setBlockLot} {...sharedProps} />
             </View>
           ) : (
             <View style={{ gap: 10 }}>
