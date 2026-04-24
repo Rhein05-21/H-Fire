@@ -155,8 +155,13 @@ async function processMessage(topic, payload) {
 
   if (!mac) return;
 
-  // 1. Update Health/Heartbeat
-  await supabase.from('devices').update({ last_seen: new Date().toISOString() }).eq('mac', mac);
+  // 1. Update Health/Heartbeat (UPSERT so new devices are registered automatically)
+  await supabase.from('devices').upsert({ 
+    mac: mac, 
+    last_seen: new Date().toISOString(),
+    label: `New Device ${mac.slice(-4)}`,
+    house_name: 'Unregistered House'
+  }, { onConflict: 'mac' });
 
   // 2. Process Data
   if (ppm !== undefined) {

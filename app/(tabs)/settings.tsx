@@ -102,28 +102,49 @@ export default function SettingsScreen() {
   const scanForDevices = async () => {
     setIsScanning(true);
     setAvailableDevices([]);
+    
+    // Refresh registry first to have latest ownership data
+    await refreshProfile();
+
     setTimeout(async () => {
-      const unowned = Object.values(allHeardDevices).filter(d => !d.profile_id);
+      // Find devices seen via MQTT that are NOT in registry OR have no profile_id
+      const unowned = Object.values(allHeardDevices).filter(heard => {
+        const normalizedMac = heard.mac.toUpperCase();
+        // Cross-reference with globalDevices (registered ones)
+        const isAlreadyLinked = globalDevices[normalizedMac] !== undefined;
+        return !isAlreadyLinked;
+      });
+
       setAvailableDevices(unowned);
       setIsScanning(false);
       if (unowned.length === 0) Alert.alert('None Found', 'No unlinked H-Fire devices detected.');
-    }, 3000);
+    }, 2000);
   };
 
   const linkDevice = async (mac: string) => {
     try {
+      const normalizedMac = mac.toUpperCase();
       const combinedName = `${lastName.trim()}, ${firstName.trim()}${middleName ? ' ' + middleName.trim() : ''}`;
-      const { error } = await supabase.from('devices').update({ 
+      
+      // Use UPSERT to ensure it works even if the device record was missing
+      const { error } = await supabase.from('devices').upsert({ 
+        mac: normalizedMac,
         profile_id: profileId, 
         house_name: combinedName || 'Unnamed House', 
-        block_lot: blockLot || 'General' 
-      }).eq('mac', mac);
+        block_lot: blockLot || 'General',
+        label: `Device ${normalizedMac.slice(-4)}`
+      }, { onConflict: 'mac' });
+
       if (error) throw error;
+      
       await refreshProfile();
-      setAvailableDevices(prev => prev.filter(d => d.mac !== mac));
+      setAvailableDevices(prev => prev.filter(d => d.mac.toUpperCase() !== normalizedMac));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Device Linked!');
-    } catch (e) { Alert.alert('Error', 'Failed to claim device.'); }
+    } catch (e) { 
+      console.error('Claim error:', e);
+      Alert.alert('Error', 'Failed to claim device.'); 
+    }
   };
 
   const handleUnlink = (mac: string, label: string) => {
