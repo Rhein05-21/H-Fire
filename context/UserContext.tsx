@@ -100,13 +100,24 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const devices = useMemo(() => {
     const mine: Record<string, Device> = {};
     if (!profileId) return mine;
-    Object.values(allHeardDevices).forEach(dev => {
-      // Normalize MACs to uppercase for reliable matching
-      const devMac = dev.mac.toUpperCase();
-      const regInfo = Object.values(registry).find(r => r.mac.toUpperCase() === devMac);
-      
-      if (regInfo && regInfo.profile_id === profileId) {
-        mine[dev.mac] = { ...dev, label: regInfo.label, houseId: regInfo.house_name, block_lot: regInfo.block_lot };
+
+    // Start with all devices registered to this user in Supabase
+    Object.values(registry).forEach(regInfo => {
+      if (regInfo.profile_id === profileId) {
+        const normalizedMac = regInfo.mac.toUpperCase();
+        const liveData = allHeardDevices[normalizedMac];
+        
+        mine[normalizedMac] = {
+          id: normalizedMac,
+          mac: normalizedMac,
+          ppm: liveData ? liveData.ppm : 0,
+          status: liveData ? liveData.status : 'Offline',
+          label: regInfo.label || `Device ${normalizedMac.slice(-4)}`,
+          houseId: regInfo.house_name,
+          block_lot: regInfo.block_lot,
+          lastSeen: liveData ? liveData.lastSeen : (regInfo.last_seen ? new Date(regInfo.last_seen) : new Date(0)),
+          profile_id: regInfo.profile_id
+        };
       }
     });
     return mine;
@@ -187,8 +198,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const channel = supabase
       .channel('system-sync')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'app_settings', filter: 'key=eq.bridge_heartbeat' }, (payload) => {
-        setBridgeHeartbeat(new Date(payload.new.value));
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, (payload) => {
+        const updated = payload.new as any;
+        if (updated && updated.key === 'bridge_heartbeat') {
+          setBridgeHeartbeat(new Date(updated.value));
+        }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'devices' }, (payload) => {
         const updated = payload.new as any;
