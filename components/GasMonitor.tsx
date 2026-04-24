@@ -25,7 +25,7 @@ const getStatusData = (ppm: number, isInactive: boolean) => {
 
 export default function GasDashboard() {
   const { colorScheme } = useAppTheme();
-  const { userDetails, profileId, loading: userLoading, devices, setUserDetails, systemStatus } = useUser();
+  const { userDetails, profileId, loading: userLoading, devices, setUserDetails, systemStatus, refreshProfile } = useUser();
   
   const containerBg = useThemeColor({}, 'background');
   const cardBg = useThemeColor({ light: '#fff', dark: '#1c1c1e' }, 'background');
@@ -85,8 +85,9 @@ export default function GasDashboard() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setTimeout(() => setRefreshing(false), 1000);
-  }, []);
+    await refreshProfile();
+    setRefreshing(false);
+  }, [refreshProfile]);
 
   const saveLabel = async () => {
     if (editingMac) {

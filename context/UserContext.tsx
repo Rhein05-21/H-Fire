@@ -231,39 +231,51 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     client.on('message', (receivedTopic, message) => {
       try {
         const payload = message.toString();
-        let data;
+        const parts = receivedTopic.split('/');
+        const houseId = parts[1] || 'Unknown';
+        const type = parts[2]; // data, status, etc.
 
-        try {
-          data = JSON.parse(payload);
-        } catch (e) {
-          // FALLBACK: Try parsing as comma-separated values (MAC,PPM,FLAME)
-          const parts = payload.split(',');
-          if (parts.length >= 2) {
+        let data: any = null;
+
+        // 1. Try JSON
+        if (payload.startsWith('{')) {
+          try { data = JSON.parse(payload); } catch (e) {}
+        } 
+        
+        // 2. Try CSV Fallback (MAC,PPM,FLAME)
+        if (!data) {
+          const csvParts = payload.split(',');
+          if (csvParts.length >= 2) {
             data = {
-              mac: parts[0].trim(),
-              ppm: Number(parts[1].trim()),
-              status: parts[2] ? (parts[2].trim() === '1' || parts[2].trim() === 'true' ? 'Warning' : 'Normal') : 'Normal'
+              mac: csvParts[0].trim(),
+              ppm: Number(csvParts[1].trim()),
+              flame: csvParts[2] ? (csvParts[2].trim() === '1' || csvParts[2].trim() === 'true') : false
             };
-          } else {
-            return; // Ignore malformed non-JSON
           }
         }
 
-        const mac = data.mac;
-        if (!mac) return;
-        
-        // Normalize the heard MAC
-        const normalizedMac = mac.toUpperCase();
+        // 3. Try Raw Number Fallback (hfire/houseId/data)
+        if (!data && type === 'data') {
+          const rawPpm = parseInt(payload, 10);
+          if (!isNaN(rawPpm)) {
+            data = { mac: null, ppm: rawPpm };
+          }
+        }
+
+        if (!data) return;
+
+        // Determine MAC (use houseId as fallback for legacy/raw signals)
+        const mac = (data.mac || houseId).toUpperCase();
         
         setAllHeardDevices(prev => ({
           ...prev,
-          [normalizedMac]: {
-            id: normalizedMac, 
-            mac: normalizedMac,
-            ppm: data.ppm || 0,
-            status: data.status || 'Normal',
-            label: `Device ${normalizedMac.slice(-4)}`,
-            houseId: receivedTopic.split('/')[1],
+          [mac]: {
+            id: mac, 
+            mac: mac,
+            ppm: data.ppm !== undefined ? data.ppm : (prev[mac]?.ppm || 0),
+            status: data.ppm > 1500 ? 'Danger' : (data.ppm > 450 || data.flame ? 'Warning' : 'Normal'),
+            label: `Device ${mac.slice(-4)}`,
+            houseId: houseId,
             lastSeen: new Date()
           }
         }));
