@@ -326,8 +326,8 @@ export default function SettingsScreen() {
                   <Text style={styles.fieldLabel}>COMMUNITY / BLOCK & LOT</Text>
                   <TextInput 
                     style={[styles.input, { backgroundColor: inputBg, color: textColor }]} 
-                    value={community} 
-                    onChangeText={setCommunity} 
+                    value={blockLot} 
+                    onChangeText={setBlockLot} 
                     placeholder="e.g. Block 1 Lot 1" 
                     placeholderTextColor={placeholderColor}
                     maxLength={100} 
