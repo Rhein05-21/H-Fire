@@ -179,29 +179,28 @@ async function processMessage(topic, payload) {
     let status = 'Normal';
     let alertType = 'NONE';
 
-    if (flame === true && ppm > 450) {
+    if (ppm > 1500 || (flame === true && ppm > 450)) {
       status = 'Danger';
       alertType = 'FIRE';
-    } else if (ppm > 1500) {
-      status = 'Danger';
-      alertType = 'GAS/SMOKE';
-    } else if (flame === true || ppm > 450) {
+    } else if (ppm > 450) {
       status = 'Warning';
-      alertType = flame ? 'FLAME' : 'MODERATE SMOKE';
+      alertType = 'GAS / SMOKE LEAK';
     }
 
     await supabase.from('gas_logs').insert([{ 
       device_mac: mac, ppm_level: ppm, status, profile_id: ownerId 
     }]);
 
-    if (status === 'Danger') {
-      console.log(`🚨 DANGER DETECTED at ${mac}!`);
+    if (status === 'Danger' || status === 'Warning') {
+      console.log(`🚨 ${alertType} DETECTED at ${mac}!`);
       const { data: device } = await supabase.from('devices').select('house_name').eq('mac', mac).single();
       
-      await supabase.from('incidents').insert([{
-        device_mac: mac, status: 'Active', ppm_at_trigger: ppm,
-        alert_type: alertType, profile_id: ownerId
-      }]);
+      if (status === 'Danger') {
+        await supabase.from('incidents').insert([{
+          device_mac: mac, status: 'Active', ppm_at_trigger: ppm,
+          alert_type: alertType, profile_id: ownerId
+        }]);
+      }
 
       await sendPushNotification(ownerId, device?.house_name || 'Home', alertType, ppm);
     }
