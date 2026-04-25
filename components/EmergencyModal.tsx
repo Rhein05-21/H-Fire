@@ -5,29 +5,46 @@ import { Audio } from 'expo-av';
 import { IconSymbol } from './ui/icon-symbol';
 import { useUser } from '@/context/UserContext';
 
+import { supabase } from '@/utils/supabase';
+
 const { width, height } = Dimensions.get('window');
 
-interface EmergencyModalProps {
-  visible: boolean;
-  incident: {
-    id: string | number;
-    house_name: string;
-    label: string;
-    ppm: number;
-    alert_type: 'FIRE' | 'GAS/SMOKE' | 'SMOKE' | 'FLAME' | 'MODERATE SMOKE' | 'GAS / SMOKE LEAK';
-    device_mac?: string;
-  } | null;
-  onClose: () => void;
+interface FamilyMember {
+  id: string | number;
+  profile_id: string;
+  full_name: string;
+  phone: string;
+  relationship: string;
+  is_primary: boolean;
 }
 
-const BFP_HOTLINE = '911'; // Bureau of Fire Protection placeholder
-const ADMIN_CONTACT = '09123456789'; // Admin placeholder
+const BFP_HOTLINE = '911'; 
+const ADMIN_CONTACT = '09123456789'; 
 
 export default function EmergencyModal({ visible, incident, onClose }: EmergencyModalProps) {
-  const { devices, userDetails } = useUser();
+  const { devices, profileId } = useUser();
   const [pulseAnim] = useState(new Animated.Value(1));
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [showCallOptions, setShowCallOptions] = useState(false);
+  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
+  const [loadingContacts, setLoadingContacts] = useState(false);
+
+  // FETCH REAL CONTACTS
+  useEffect(() => {
+    if (visible && profileId) {
+      setLoadingContacts(true);
+      supabase
+        .from('family_members')
+        .select('*')
+        .eq('profile_id', profileId)
+        .then(({ data }) => {
+          if (data) setFamilyMembers(data);
+          setLoadingContacts(false);
+        });
+    } else if (!visible) {
+      setFamilyMembers([]);
+    }
+  }, [visible, profileId]);
 
   // REAL-TIME PPM LOOKUP
   const livePpm = useMemo(() => {
@@ -36,7 +53,18 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
     return currentDevice ? currentDevice.ppm : incident.ppm;
   }, [devices, incident]);
 
+  const handleCallPrimary = () => {
+    if (familyMembers.length > 0) {
+      const primary = familyMembers.find(m => m.is_primary) || familyMembers[0];
+      handleCall(primary.phone);
+    } else {
+      setShowCallOptions(true);
+    }
+  };
+
   async function playSiren() {
+// ... (rest of siren logic)
+
     try {
       if (!incident) return;
       if (sound) { await sound.stopAsync(); await sound.unloadAsync(); }
@@ -115,13 +143,19 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
 
             <Text style={styles.instruction}>Immediate response required at this location.</Text>
 
-            <TouchableOpacity style={styles.callMainBtn} onPress={() => setShowCallOptions(true)}>
-              <IconSymbol name="phone.fill" size={24} color="#fff" />
-              <Text style={styles.callMainBtnText}>CALL FOR HELP</Text>
+            <TouchableOpacity style={styles.callMainBtn} onPress={handleCallPrimary}>
+              <IconSymbol name="phone.fill" size={24} color={isFire ? "#D32F2F" : "#FF9500"} />
+              <Text style={[styles.callMainBtnText, { color: isFire ? "#D32F2F" : "#FF9500" }]}>
+                {familyMembers.length > 0 ? 'CALL PRIMARY CONTACT' : 'CALL FOR HELP'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.callSecondaryBtn} onPress={() => setShowCallOptions(true)}>
+              <Text style={styles.callSecondaryBtnText}>OTHER CALL OPTIONS</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.ackLink} onPress={handleAcknowledge}>
-              <Text style={styles.ackLinkText}>Acknowledge Incident</Text>
+              <Text style={styles.ackLinkText}>Dismiss Alert</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -129,14 +163,22 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
             <Text style={styles.emergencyTitle}>SELECT CONTACT</Text>
             
             <View style={styles.contactList}>
-              <TouchableOpacity style={styles.contactItem} onPress={() => handleCall(ADMIN_CONTACT)}>
-                <View style={styles.contactIcon}><IconSymbol name="person.fill" size={24} color="#fff" /></View>
-                <View style={styles.contactText}>
-                  <Text style={styles.contactName}>Household Member / Owner</Text>
-                  <Text style={styles.contactDesc}>Contact house owner directly</Text>
+              {familyMembers.length > 0 ? familyMembers.map((member) => (
+                <TouchableOpacity key={member.id} style={styles.contactItem} onPress={() => handleCall(member.phone)}>
+                  <View style={[styles.contactIcon, member.is_primary && { backgroundColor: '#34C759' }]}>
+                    <IconSymbol name="person.fill" size={24} color="#fff" />
+                  </View>
+                  <View style={styles.contactText}>
+                    <Text style={styles.contactName}>{member.full_name}</Text>
+                    <Text style={styles.contactDesc}>{member.relationship} {member.is_primary ? '(Primary)' : ''}</Text>
+                  </View>
+                  <IconSymbol name="phone.fill" size={20} color="rgba(255,255,255,0.5)" />
+                </TouchableOpacity>
+              )) : (
+                <View style={styles.contactItem}>
+                  <Text style={[styles.contactName, { opacity: 0.6 }]}>No household contact registered</Text>
                 </View>
-                <IconSymbol name="chevron.right" size={20} color="rgba(255,255,255,0.5)" />
-              </TouchableOpacity>
+              )}
 
               <TouchableOpacity style={styles.contactItem} onPress={() => handleCall(ADMIN_CONTACT)}>
                 <View style={[styles.contactIcon, { backgroundColor: '#2196F3' }]}><IconSymbol name="shield.fill" size={24} color="#fff" /></View>
@@ -144,16 +186,16 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
                   <Text style={styles.contactName}>System Administrator</Text>
                   <Text style={styles.contactDesc}>Emergency Support Line</Text>
                 </View>
-                <IconSymbol name="chevron.right" size={20} color="rgba(255,255,255,0.5)" />
+                <IconSymbol name="phone.fill" size={20} color="rgba(255,255,255,0.5)" />
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.contactItem} onPress={() => handleCall(BFP_HOTLINE)}>
                 <View style={[styles.contactIcon, { backgroundColor: '#D32F2F' }]}><IconSymbol name="flame.fill" size={24} color="#fff" /></View>
                 <View style={styles.contactText}>
-                  <Text style={styles.contactName}>BFP HOTLINE</Text>
+                  <Text style={styles.contactName}>BFP HOTLINE (911)</Text>
                   <Text style={styles.contactDesc}>Bureau of Fire Protection</Text>
                 </View>
-                <IconSymbol name="chevron.right" size={20} color="rgba(255,255,255,0.5)" />
+                <IconSymbol name="phone.fill" size={20} color="rgba(255,255,255,0.5)" />
               </TouchableOpacity>
             </View>
 
@@ -162,6 +204,7 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
             </TouchableOpacity>
           </View>
         )}
+
       </View>
     </Modal>
   );
@@ -179,7 +222,9 @@ const styles = StyleSheet.create({
   ppmLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 1 },
   instruction: { color: '#fff', fontSize: 16, textAlign: 'center', fontWeight: '600', lineHeight: 24, marginBottom: 40, opacity: 0.9 },
   callMainBtn: { backgroundColor: '#fff', width: '100%', padding: 22, borderRadius: 20, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', elevation: 5 },
-  callMainBtnText: { color: '#D32F2F', fontSize: 18, fontWeight: '900', letterSpacing: 1, marginLeft: 10 },
+  callMainBtnText: { fontSize: 18, fontWeight: '900', letterSpacing: 1, marginLeft: 10 },
+  callSecondaryBtn: { marginTop: 15, width: '100%', padding: 18, borderRadius: 20, borderWidth: 2, borderColor: 'rgba(255,255,255,0.4)', alignItems: 'center' },
+  callSecondaryBtnText: { color: '#fff', fontSize: 13, fontWeight: '800', letterSpacing: 1 },
   ackLink: { marginTop: 25, padding: 10 },
   ackLinkText: { color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: '700', textDecorationLine: 'underline' },
   

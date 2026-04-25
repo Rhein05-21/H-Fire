@@ -44,7 +44,7 @@ refreshDeviceCache();
 setInterval(refreshDeviceCache, 30000);
 
 // --- PUSH NOTIFICATION LOGIC ---
-async function sendPushNotification(ownerId, houseName, alertType, ppm) {
+async function sendPushNotification(ownerId, houseName, alertType, ppm, incidentId, deviceMac, label) {
   try {
     const { data: profile } = await supabase
       .from('profiles')
@@ -57,16 +57,23 @@ async function sendPushNotification(ownerId, houseName, alertType, ppm) {
       return;
     }
 
-    console.log(`🔔 Sending Push Alert to: ${profile.name}`);
+    console.log(`🔔 Sending Enriched Push Alert to: ${profile.name}`);
 
     const message = {
       to: profile.push_token,
       sound: 'default',
-      title: `🔥 EMERGENCY: ${alertType} DETECTED`,
-      body: `${houseName}: Critical level detected (${ppm} PPM). Check the app!`,
-      data: { houseName, alertType, ppm },
+      title: alertType === 'FIRE' ? '🔥 FIRE ALERT' : '⚠️ GAS/SMOKE ALERT',
+      body: `${houseName} · ${label} · ${ppm} PPM`,
+      data: { 
+        incidentId, 
+        device_mac: deviceMac, 
+        alert_type: alertType, 
+        house_name: houseName, 
+        label, 
+        ppm 
+      },
       priority: 'high',
-      channelId: 'emergency-alerts', // Matches the channel created in the app for background delivery
+      channelId: 'emergency-alerts',
     };
 
     const response = await fetch('https://exp.host/--/api/v2/push/send', {
@@ -194,16 +201,26 @@ async function processMessage(topic, payload) {
 
     if (status === 'Danger' || status === 'Warning') {
       console.log(`🚨 ${alertType} DETECTED at ${mac}!`);
-      const { data: device } = await supabase.from('devices').select('house_name').eq('mac', mac).single();
+      const { data: device } = await supabase.from('devices').select('house_name, label').eq('mac', mac).single();
       
+      let insertedIncidentId = null;
       if (status === 'Danger') {
-        await supabase.from('incidents').insert([{
+        const { data: incident } = await supabase.from('incidents').insert([{
           device_mac: mac, status: 'Active', ppm_at_trigger: ppm,
           alert_type: alertType, profile_id: ownerId
-        }]);
+        }]).select('id').single();
+        insertedIncidentId = incident?.id;
       }
 
-      await sendPushNotification(ownerId, device?.house_name || 'Home', alertType, ppm);
+      await sendPushNotification(
+        ownerId, 
+        device?.house_name || 'Home', 
+        alertType, 
+        ppm, 
+        insertedIncidentId, 
+        mac, 
+        device?.label || 'Unknown Room'
+      );
     }
   }
 }

@@ -18,6 +18,7 @@ import { usePushNotifications } from '@/hooks/use-push-notifications';
 import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import * as Sentry from '@sentry/react-native';
+import * as Notifications from 'expo-notifications';
 import { ClerkProvider, ClerkLoaded } from '@clerk/clerk-expo';
 import { tokenCache } from '@/utils/cache';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -75,6 +76,24 @@ function RootLayoutContent() {
   const fadeAnim = React.useRef(new Animated.Value(1)).current;
 
   usePushNotifications(profileId);
+
+  // --- NOTIFICATION TAP HANDLER (for Background/Killed state) ---
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data;
+      if (data?.incidentId || data?.device_mac) {
+        triggerEmergency({
+          id: data.incidentId,
+          house_name: data.house_name || 'Home',
+          label: data.label || 'Unknown Room',
+          ppm: data.ppm || 0,
+          alert_type: data.alert_type || 'FIRE',
+          device_mac: data.device_mac
+        });
+      }
+    });
+    return () => subscription.remove();
+  }, [triggerEmergency]);
 
   // --- OTA UPDATE LOGIC ---
   useEffect(() => {
