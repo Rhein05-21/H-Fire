@@ -66,6 +66,7 @@ async function sendPushNotification(ownerId, houseName, alertType, ppm) {
       body: `${houseName}: Critical level detected (${ppm} PPM). Check the app!`,
       data: { houseName, alertType, ppm },
       priority: 'high',
+      channelId: 'emergency-alerts', // Matches the channel created in the app for background delivery
     };
 
     const response = await fetch('https://exp.host/--/api/v2/push/send', {

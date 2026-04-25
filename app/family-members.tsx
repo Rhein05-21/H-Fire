@@ -45,16 +45,66 @@ export default function FamilyMembersScreen() {
   const [fullName, setFullName] = useState('');
   const [age, setAge] = useState('');
   const [relationship, setRelationship] = useState('Member');
-  const [phone, setPhone] = useState('+639');
+  const [otherRelationship, setOtherRelationship] = useState('');
+  const [phone, setPhone] = useState('09');
   const [email, setEmail] = useState('');
   const [isPrimary, setIsPrimary] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const backgroundColor = useThemeColor({}, 'background');
-  const textColor = useThemeColor({}, 'text');
-  const cardBg = useThemeColor({ light: '#fff', dark: '#1c1c1e' }, 'background');
-  const secondaryText = useThemeColor({ light: '#8E8E93', dark: '#8E8E93' }, 'text');
-  const inputBg = useThemeColor({ light: '#f2f2f7', dark: '#2c2c2e' }, 'background');
+  // Error States
+  const [nameError, setNameError] = useState('');
+  const [ageError, setAgeError] = useState('');
+  const [phoneError, setPhoneError] = useState('');
+  const [emailError, setEmailError] = useState('');
+
+  // VALIDATION HELPERS
+  const validateName = (text: string) => {
+    // Remove numbers from input immediately or just show error
+    const noNumbers = text.replace(/[0-9]/g, '');
+    setFullName(noNumbers);
+    
+    if (text.trim().length === 1) {
+      setNameError('Name must be at least 2 characters');
+    } else if (/[0-9]/.test(text)) {
+      setNameError('Numbers are not allowed in names');
+    } else {
+      setNameError('');
+    }
+  };
+
+  const validateEmail = (text: string) => {
+    setEmail(text);
+    if (text.length > 0) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(text)) {
+        setEmailError('Please enter a valid email address');
+      } else {
+        setEmailError('');
+      }
+    } else {
+      setEmailError('');
+    }
+  };
+
+  const validateAge = (text: string) => {
+    const numericAge = text.replace(/[^0-9]/g, '');
+    setAge(numericAge);
+    if (numericAge && parseInt(numericAge) <= 5) {
+      setAgeError('Age must be at least 6 years old');
+    } else {
+      setAgeError('');
+    }
+  };
+
+  const validatePhone = (text: string) => {
+    const numericPhone = text.replace(/[^0-9]/g, '');
+    setPhone(numericPhone);
+    if (numericPhone.length > 0 && numericPhone.length !== 11) {
+      setPhoneError('Phone number must be exactly 11 digits');
+    } else {
+      setPhoneError('');
+    }
+  };
 
   const fetchMembers = async () => {
     if (!profileId) return;
@@ -81,6 +131,10 @@ export default function FamilyMembersScreen() {
 
   const openModal = (member: FamilyMember | null = null) => {
     setEditingMember(member);
+    setNameError('');
+    setAgeError('');
+    setPhoneError('');
+    
     if (member) {
       setFullName(member.full_name);
       setAge(member.age.toString());
@@ -92,7 +146,7 @@ export default function FamilyMembersScreen() {
       setFullName('');
       setAge('');
       setRelationship('Member');
-      setPhone('+639');
+      setPhone('09');
       setEmail('');
       setIsPrimary(members.length === 0); 
     }
@@ -100,8 +154,22 @@ export default function FamilyMembersScreen() {
   };
 
   const handleSave = () => {
-    if (!fullName || !phone || !age) {
+    const trimmedName = fullName.trim();
+    const numericAge = parseInt(age);
+    const numericPhone = phone.replace(/[^0-9]/g, '');
+
+    if (!trimmedName || !phone || !age) {
       Alert.alert('Error', 'Please fill in required fields (Name, Age, Phone)');
+      return;
+    }
+
+    if (relationship === 'Other' && !otherRelationship.trim()) {
+      Alert.alert('Error', 'Please specify the relationship.');
+      return;
+    }
+
+    if (nameError || ageError || phoneError || emailError) {
+      Alert.alert('Error', 'Please fix the errors in the form.');
       return;
     }
 
@@ -118,13 +186,14 @@ export default function FamilyMembersScreen() {
   const executeSave = async () => {
     setSaving(true);
     try {
+      const finalRelationship = relationship === 'Other' ? otherRelationship.trim() : relationship;
       const payload = {
         profile_id: profileId,
-        full_name: fullName,
+        full_name: fullName.trim(),
         age: parseInt(age),
-        relationship,
+        relationship: finalRelationship,
         phone,
-        email,
+        email: email.trim() || null,
         is_primary: isPrimary,
       };
 
@@ -280,24 +349,27 @@ export default function FamilyMembersScreen() {
             <ScrollView style={styles.form} showsVerticalScrollIndicator={false}>
               <Text style={styles.label}>FULL NAME *</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: inputBg, color: textColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: textColor }, nameError ? styles.inputError : null]}
                 value={fullName}
-                onChangeText={setFullName}
+                onChangeText={validateName}
                 placeholder="Juan Dela Cruz"
                 placeholderTextColor="#999"
               />
+              {nameError ? <Text style={styles.errorText}>{nameError}</Text> : null}
 
               <View style={styles.row}>
                 <View style={{ flex: 1, marginRight: 10 }}>
                   <Text style={styles.label}>AGE *</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: inputBg, color: textColor }]}
+                    style={[styles.input, { backgroundColor: inputBg, color: textColor }, ageError ? styles.inputError : null]}
                     value={age}
-                    onChangeText={(t) => setAge(t.replace(/[^0-9]/g, ''))}
+                    onChangeText={validateAge}
                     keyboardType="number-pad"
                     placeholder="45"
                     placeholderTextColor="#999"
+                    maxLength={3}
                   />
+                  {ageError ? <Text style={styles.errorText}>{ageError}</Text> : null}
                 </View>
                 <View style={{ flex: 2 }}>
                   <Text style={styles.label}>RELATIONSHIP</Text>
@@ -309,7 +381,10 @@ export default function FamilyMembersScreen() {
                           styles.relChip,
                           { backgroundColor: relationship === r ? '#2196F3' : inputBg },
                         ]}
-                        onPress={() => setRelationship(r)}
+                        onPress={() => {
+                          setRelationship(r);
+                          if (r !== 'Other') setOtherRelationship('');
+                        }}
                       >
                         <Text
                           style={[
@@ -325,26 +400,43 @@ export default function FamilyMembersScreen() {
                 </View>
               </View>
 
-              <Text style={styles.label}>PHONE NUMBER (E.164) *</Text>
+              {relationship === 'Other' && (
+                <View>
+                  <Text style={styles.label}>SPECIFY RELATIONSHIP *</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: inputBg, color: textColor }]}
+                    value={otherRelationship}
+                    onChangeText={setOtherRelationship}
+                    placeholder="e.g. Tenant, Nanny, etc."
+                    placeholderTextColor="#999"
+                    maxLength={30}
+                  />
+                </View>
+              )}
+
+              <Text style={styles.label}>PHONE NUMBER (11 DIGITS) *</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: inputBg, color: textColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: textColor }, phoneError ? styles.inputError : null]}
                 value={phone}
-                onChangeText={setPhone}
+                onChangeText={validatePhone}
                 keyboardType="phone-pad"
-                placeholder="+639..."
+                placeholder="09123456789"
                 placeholderTextColor="#999"
+                maxLength={11}
               />
+              {phoneError ? <Text style={styles.errorText}>{phoneError}</Text> : null}
 
               <Text style={styles.label}>EMAIL (OPTIONAL)</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: inputBg, color: textColor }]}
+                style={[styles.input, { backgroundColor: inputBg, color: textColor }, emailError ? styles.inputError : null]}
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={validateEmail}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 placeholder="juan@gmail.com"
                 placeholderTextColor="#999"
               />
+              {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
 
               <TouchableOpacity
                 style={styles.checkRow}
@@ -415,7 +507,9 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 22, fontWeight: '900' },
   form: { gap: 15 },
   label: { fontSize: 10, fontWeight: '900', color: '#8E8E93', marginBottom: 8, letterSpacing: 1 },
-  input: { borderRadius: 12, padding: 16, fontSize: 16, marginBottom: 15, fontWeight: '600' },
+  input: { borderRadius: 12, padding: 16, fontSize: 16, marginBottom: 8, fontWeight: '600' },
+  inputError: { borderWidth: 1, borderColor: '#FF3B30' },
+  errorText: { color: '#FF3B30', fontSize: 10, fontWeight: '700', marginBottom: 12, marginLeft: 4 },
   row: { flexDirection: 'row' },
   relationshipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   relChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },

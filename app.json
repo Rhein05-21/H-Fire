@@ -19,7 +19,11 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ]
     },
     "web": {
       "output": "static",
@@ -28,6 +32,7 @@
     "plugins": [
       "expo-router",
       "expo-updates",
+      "expo-notifications",
       "@react-native-google-signin/google-signin",
       [
         "expo-splash-screen",

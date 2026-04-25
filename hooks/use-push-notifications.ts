@@ -63,11 +63,14 @@ export function usePushNotifications(profileId: string | null) {
 async function registerForPushNotificationsAsync() {
   let token;
   if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('default', {
-      name: 'default',
+    await Notifications.setNotificationChannelAsync('emergency-alerts', {
+      name: 'Emergency Alerts',
       importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#FF231F7C',
+      vibrationPattern: [0, 250, 250, 250, 250, 250, 250, 250],
+      lightColor: '#FF3B30',
+      sound: 'default', // Using default system sound for reliability
+      enableVibrate: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
   }
 

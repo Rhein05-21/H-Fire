@@ -38,6 +38,8 @@ export default function SettingsScreen() {
   const [firstName, setFirstName] = useState('');
   const [middleName, setMiddleName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [firstNameError, setFirstNameError] = useState('');
+  const [lastNameError, setLastNameError] = useState('');
   const [blockLot, setBlockLot] = useState('');
   const [address, setAddress] = useState('');
   const [location, setLocation] = useState<{ latitude: number, longitude: number } | null>(null);
@@ -310,13 +312,14 @@ export default function SettingsScreen() {
                 <View>
                   <Text style={styles.fieldLabel}>FIRST NAME</Text>
                   <TextInput 
-                    style={[styles.input, { backgroundColor: inputBg, color: textColor }]} 
+                    style={[styles.input, { backgroundColor: inputBg, color: textColor }, firstNameError ? styles.inputError : null]} 
                     value={firstName} 
-                    onChangeText={setFirstName} 
+                    onChangeText={validateFirstName} 
                     placeholder="Enter first name" 
                     placeholderTextColor={placeholderColor}
                     maxLength={50} 
                   />
+                  {firstNameError ? <Text style={styles.errorText}>{firstNameError}</Text> : null}
                 </View>
 
                 <View>
@@ -334,13 +337,14 @@ export default function SettingsScreen() {
                 <View>
                   <Text style={styles.fieldLabel}>LAST NAME</Text>
                   <TextInput 
-                    style={[styles.input, { backgroundColor: inputBg, color: textColor }]} 
+                    style={[styles.input, { backgroundColor: inputBg, color: textColor }, lastNameError ? styles.inputError : null]} 
                     value={lastName} 
-                    onChangeText={setLastName} 
+                    onChangeText={validateLastName} 
                     placeholder="Enter last name" 
                     placeholderTextColor={placeholderColor}
                     maxLength={50} 
                   />
+                  {lastNameError ? <Text style={styles.errorText}>{lastNameError}</Text> : null}
                 </View>
 
                 <View>
@@ -666,6 +670,8 @@ const styles = StyleSheet.create({
   fieldLabel: { fontSize: 10, fontWeight: '800', color: '#8e8e93', marginLeft: 4, marginBottom: 4, letterSpacing: 0.5 },
   inputGroup: { gap: 15, marginBottom: 15 },
   input: { borderRadius: 14, padding: 16, fontSize: 16, fontWeight: '600' },
+  inputError: { borderWidth: 1, borderColor: '#FF3B30' },
+  errorText: { color: '#FF3B30', fontSize: 11, fontWeight: '700', marginTop: 4, marginLeft: 4 },
   locBtn: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 14, marginBottom: 20 },
   locBtnText: { marginLeft: 10, fontWeight: '700', fontSize: 15 },
   saveBtn: { backgroundColor: '#2196F3', padding: 18, borderRadius: 16, alignItems: 'center' },
