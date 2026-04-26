@@ -19,6 +19,7 @@ import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import * as Sentry from '@sentry/react-native';
 import * as Notifications from 'expo-notifications';
+import { Audio } from 'expo-av';
 import { ClerkProvider, ClerkLoaded } from '@clerk/clerk-expo';
 import { tokenCache } from '@/utils/cache';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -76,6 +77,26 @@ function RootLayoutContent() {
   const fadeAnim = React.useRef(new Animated.Value(1)).current;
 
   usePushNotifications(profileId);
+
+  // --- GLOBAL AUDIO CONFIGURATION ---
+  useEffect(() => {
+    async function setupAudio() {
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          staysActiveInBackground: true,
+          interruptionModeIOS: 1, // InterruptionModeIOS.DoNotMix
+          playsInSilentModeIOS: true,
+          shouldDuckAndroid: true,
+          interruptionModeAndroid: 1, // InterruptionModeAndroid.DoNotMix
+          playThroughEarpieceAndroid: false,
+        });
+      } catch (e) {
+        console.warn('Audio setup failed', e);
+      }
+    }
+    setupAudio();
+  }, []);
 
   // --- NOTIFICATION TAP HANDLER (for Background/Killed state) ---
   useEffect(() => {

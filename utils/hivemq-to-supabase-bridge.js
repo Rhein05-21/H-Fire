@@ -74,6 +74,16 @@ async function sendPushNotification(ownerId, houseName, alertType, ppm, incident
       },
       priority: 'high',
       channelId: 'emergency-alerts',
+      // ANTI-SPAM & GROUPING (Cross-Platform)
+      android: {
+        tag: deviceMac, // Android: Overwrites existing notification from this device
+        collapseKey: deviceMac,
+      },
+      ios: {
+        threadId: deviceMac, // iOS: Groups notifications from this device into one stack
+        _displayInForeground: true,
+      },
+      mutableContent: true, // Allows for future rich media or custom logic on iOS
     };
 
     const response = await fetch('https://exp.host/--/api/v2/push/send', {

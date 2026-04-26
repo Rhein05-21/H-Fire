@@ -63,11 +63,28 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
   };
 
   async function playSiren() {
-// ... (rest of siren logic)
-
     try {
       if (!incident) return;
-      if (sound) { await sound.stopAsync(); await sound.unloadAsync(); }
+
+      // Ensure audio mode is set for loud playback even in silent mode
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        staysActiveInBackground: true,
+        interruptionModeIOS: 1, // InterruptionModeIOS.DoNotMix
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        interruptionModeAndroid: 1, // InterruptionModeAndroid.DoNotMix
+        playThroughEarpieceAndroid: false,
+      });
+
+      if (sound) {
+        try {
+          await sound.stopAsync();
+          await sound.unloadAsync();
+        } catch (e) {
+          // ignore unload errors
+        }
+      }
 
       const isFire = incident.alert_type === 'FIRE';
       const soundFile = isFire 
@@ -80,7 +97,9 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
       );
       setSound(newSound);
       await newSound.playAsync();
-    } catch (error) { console.error('CRITICAL: Failed to play siren', error); }
+    } catch (error) { 
+      console.error('CRITICAL: Failed to play siren', error); 
+    }
   }
 
   async function stopSiren() {

@@ -1,0 +1,9 @@
+﻿.expo/
+dist/
+node_modules/
+.kiro/
+__tests__/
+types/
+.vscode/
+*.log
+

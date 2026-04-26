@@ -161,8 +161,47 @@ export default function SettingsScreen() {
     ]);
   };
 
+  // REAL-TIME VALIDATION HELPERS
+  const validateFirstName = (text: string) => {
+    const cleaned = text.replace(/[0-9]/g, '');
+    setFirstName(cleaned);
+    if (cleaned.trim().length < 2) {
+      setFirstNameError('First name must be at least 2 characters');
+    } else if (/[0-9]/.test(text)) {
+      setFirstNameError('Numbers are not allowed');
+    } else {
+      setFirstNameError('');
+    }
+  };
+
+  const validateLastName = (text: string) => {
+    const cleaned = text.replace(/[0-9]/g, '');
+    setLastName(cleaned);
+    if (cleaned.trim().length < 2) {
+      setLastNameError('Last name must be at least 2 characters');
+    } else if (/[0-9]/.test(text)) {
+      setLastNameError('Numbers are not allowed');
+    } else {
+      setLastNameError('');
+    }
+  };
+
   const handleSave = () => {
-    if (!firstName.trim() || !lastName.trim()) return Alert.alert('Error', 'First and Last name are required.');
+    const trimmedFirst = firstName.trim();
+    const trimmedLast = lastName.trim();
+    const trimmedBlock = blockLot.trim();
+
+    if (!trimmedFirst || !trimmedLast || !trimmedBlock) {
+      return Alert.alert('Error', 'First name, Last name, and Block/Lot are required.');
+    }
+
+    if (firstNameError) {
+      return Alert.alert('Invalid Firstname', 'Should be at least 2 characters and no numbers.');
+    }
+
+    if (lastNameError) {
+      return Alert.alert('Invalid Lastname', 'Should be at least 2 characters and no numbers.');
+    }
 
     if (!hasChanges) {
       setShowNoChangesModal(true);
@@ -208,7 +247,7 @@ export default function SettingsScreen() {
     }
   };
 
-  const constructAddress = (rev: Location.LocationGeocodedAddress) => {
+  const constructAddress = (rev: any) => {
     const parts = [];
     if (rev.name && rev.name !== rev.street) parts.push(rev.name);
     if (rev.streetNumber) parts.push(rev.streetNumber);
@@ -502,7 +541,7 @@ export default function SettingsScreen() {
                   const coord = e.nativeEvent.coordinate; 
                   setLocation(coord);
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  Location.reverseGeocodeAsync(coord).then(([rev]) => { 
+                  Location.reverseGeocodeAsync(coord).then(([rev]: any) => { 
                     if (rev) setAddress(constructAddress(rev)); 
                   });
                 }}

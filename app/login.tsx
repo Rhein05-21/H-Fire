@@ -73,6 +73,10 @@ export default function LoginScreen() {
   const [address, setAddress] = useState('');
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
+  const [firstNameError, setFirstNameError] = useState('');
+  const [lastNameError, setLastNameError] = useState('');
+  const [blockLotError, setBlockLotError] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isStepValid, setIsStepValid] = useState(false);
@@ -89,6 +93,40 @@ export default function LoginScreen() {
     }
   }, [isAuthenticated, userDetails, contextLoading]);
 
+  // Real-time Validation helpers
+  const validateFirstName = (text: string) => {
+    const cleaned = text.replace(/[0-9]/g, '');
+    setFirstName(cleaned);
+    if (cleaned.trim().length < 2) {
+      setFirstNameError('First name must be at least 2 characters');
+    } else if (/[0-9]/.test(text)) {
+      setFirstNameError('Numbers are not allowed');
+    } else {
+      setFirstNameError('');
+    }
+  };
+
+  const validateLastName = (text: string) => {
+    const cleaned = text.replace(/[0-9]/g, '');
+    setLastName(cleaned);
+    if (cleaned.trim().length < 2) {
+      setLastNameError('Last name must be at least 2 characters');
+    } else if (/[0-9]/.test(text)) {
+      setLastNameError('Numbers are not allowed');
+    } else {
+      setLastNameError('');
+    }
+  };
+
+  const validateBlockLot = (text: string) => {
+    setBlockLot(text);
+    if (text.trim().length === 0) {
+      setBlockLotError('Block & Lot Number is required');
+    } else {
+      setBlockLotError('');
+    }
+  };
+
   // Real-time Validation Effect
   useEffect(() => {
     const validate = () => {
@@ -99,7 +137,9 @@ export default function LoginScreen() {
       } else {
         if (profileStep === 1) {
           if (!firstName.trim() || firstName.trim().length < 2) return 'First Name too short';
+          if (/[0-9]/.test(firstName)) return 'No numbers in First Name';
           if (!lastName.trim() || lastName.trim().length < 2) return 'Last Name too short';
+          if (/[0-9]/.test(lastName)) return 'No numbers in Last Name';
           if (!blockLot.trim()) return 'Block & Lot required';
         } else if (profileStep === 2) {
           if (!location) return 'Location required';
@@ -240,13 +280,22 @@ export default function LoginScreen() {
             </>
           ) : profileStep === 1 ? (
             <View style={{ gap: 15 }}>
-              <InputField label="First Name" placeholder="John" maxLength={50} value={firstName} onChangeText={setFirstName} {...sharedProps} />
+              <InputField label="First Name" placeholder="John" maxLength={50} value={firstName} onChangeText={validateFirstName} error={firstNameError} {...sharedProps} />
               <InputField label="Middle Name (Optional)" placeholder="Quincy" maxLength={50} value={middleName} onChangeText={setMiddleName} {...sharedProps} />
-              <InputField label="Last Name" placeholder="Doe" maxLength={50} value={lastName} onChangeText={setLastName} {...sharedProps} />
-              <InputField label="Block and Lot Number" placeholder="Block 1 Lot 1" maxLength={100} value={blockLot} onChangeText={setBlockLot} {...sharedProps} />
+              <InputField label="Last Name" placeholder="Doe" maxLength={50} value={lastName} onChangeText={validateLastName} error={lastNameError} {...sharedProps} />
+              <InputField label="Block and Lot Number" placeholder="Block 1 Lot 1" maxLength={100} value={blockLot} onChangeText={validateBlockLot} error={blockLotError} {...sharedProps} />
             </View>
           ) : (
             <View style={{ gap: 10 }}>
+              <TouchableOpacity 
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 }} 
+                onPress={() => setProfileStep(1)}
+                disabled={loading}
+              >
+                <FontAwesome name="chevron-left" size={12} color={ACCENT} />
+                <Text style={{ color: ACCENT, fontSize: 13, fontWeight: '700' }}>Back to Step 1</Text>
+              </TouchableOpacity>
+
               <InputField label="Detailed Household Address" placeholder="House No., Street, etc." maxLength={250} value={address} onChangeText={setAddress} multiline {...sharedProps} />
               <View style={{ height: 300, borderRadius: 16, overflow: 'hidden' }}>
                 <MapView 
