@@ -2,16 +2,17 @@ import 'dotenv/config';
 
 export default {
   "expo": {
-    "name": "H-Fire: Fire/Gas Leak Monitoring System",
-    "slug": "h-fireresidentmonitor",
+    "name": "Fire/Gas Leak Monitoring",
+    "slug": "h-fireresidentmonitoring",
+    "owner": "hfiremaker",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/h-fire_logo.png",
+    "icon": "./assets/images/H-Fire _logo.png",
     "scheme": "hfire",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "updates": {
-      "url": "https://u.expo.dev/7e955f47-b77e-4f62-8949-51ad7e53911f"
+      "url": "https://u.expo.dev/0d1a5ce6-68ef-487a-9efe-25a61a61f8b2"
     },
     "runtimeVersion": {
       "policy": "appVersion"
@@ -26,7 +27,7 @@ export default {
       "package": "com.tigle.hfire",
       "adaptiveIcon": {
         "backgroundColor": "#121212",
-        "foregroundImage": "./assets/images/h-fire_logo.png",
+        "foregroundImage": "./assets/images/H-Fire _logo.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
@@ -44,7 +45,8 @@ export default {
     },
     "plugins": [
       "expo-router",
-      "@react-native-google-signin/google-signin",
+      "expo-updates",
+      "expo-notifications",
       [
         "expo-splash-screen",
         {
@@ -64,7 +66,7 @@ export default {
     },
     "extra": {
       "eas": {
-        "projectId": "7e955f47-b77e-4f62-8949-51ad7e53911f"
+        "projectId": "0d1a5ce6-68ef-487a-9efe-25a61a61f8b2"
       },
       "clerkProxyUrl": "https://valued-vulture-7.clerk.accounts.dev"
     }
