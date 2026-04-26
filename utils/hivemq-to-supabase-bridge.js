@@ -46,21 +46,22 @@ setInterval(refreshDeviceCache, 30000);
 // --- PUSH NOTIFICATION LOGIC ---
 async function sendPushNotification(ownerId, houseName, alertType, ppm, incidentId, deviceMac, label) {
   try {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('push_token, name')
-      .eq('id', ownerId)
-      .single();
+    // 1. Get ALL registered tokens for this user
+    const { data: tokens } = await supabase
+      .from('user_push_tokens')
+      .select('token')
+      .eq('profile_id', ownerId);
 
-    if (!profile?.push_token) {
-      console.log(`⚠️ No push token found for user: ${ownerId}`);
+    if (!tokens || tokens.length === 0) {
+      console.log(`⚠️ No active push tokens found for user: ${ownerId}`);
       return;
     }
 
-    console.log(`🔔 Sending Enriched Push Alert to: ${profile.name}`);
+    console.log(`🔔 Sending Enriched Push Alert to ${tokens.length} device(s)`);
 
-    const message = {
-      to: profile.push_token,
+    // 2. Prepare the notification payloads
+    const messages = tokens.map(entry => ({
+      to: entry.token,
       sound: 'default',
       title: alertType === 'FIRE' ? '🔥 FIRE ALERT' : '⚠️ GAS/SMOKE ALERT',
       body: `${houseName} · ${label} · ${ppm} PPM`,
@@ -83,22 +84,23 @@ async function sendPushNotification(ownerId, houseName, alertType, ppm, incident
         threadId: deviceMac, // iOS: Groups notifications from this device into one stack
         _displayInForeground: true,
       },
-      mutableContent: true, // Allows for future rich media or custom logic on iOS
-    };
+      mutableContent: true,
+    }));
 
+    // 3. Batch send to Expo Push API
     const response = await fetch('https://exp.host/--/api/v2/push/send', {
       method: 'POST',
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(message),
+      body: JSON.stringify(messages),
     });
 
     const result = await response.json();
-    console.log('✅ Expo Response:', result);
+    console.log('✅ Expo Batch Response:', result);
   } catch (error) {
-    console.error('❌ Push Error:', error.message);
+    console.error('❌ Batch Push Error:', error.message);
   }
 }
 

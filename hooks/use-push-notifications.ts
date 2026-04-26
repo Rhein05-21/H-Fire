@@ -48,13 +48,32 @@ export function usePushNotifications(profileId: string | null) {
   }, [profileId]);
 
   async function saveTokenToSupabase(uid: string, token: string) {
-    const { error } = await supabase
-      .from('profiles')
-      .update({ push_token: token })
-      .eq('id', uid);
-    
-    if (error) console.error('❌ Error saving push token:', error.message);
-    else console.log('✅ Push token synced to Supabase');
+    try {
+      // 1. Still update the main profile for backward compatibility
+      await supabase
+        .from('profiles')
+        .update({ push_token: token })
+        .eq('id', uid);
+
+      // 2. Insert into the new multi-token table (UPSERT)
+      const { error } = await supabase
+        .from('user_push_tokens')
+        .upsert({ 
+          profile_id: uid, 
+          token: token,
+          device_info: {
+            brand: Device.brand,
+            modelName: Device.modelName,
+            osName: Device.osName,
+            isStandAlone: !Constants.appOwnership || Constants.appOwnership !== 'expo'
+          }
+        }, { onConflict: 'token' });
+      
+      if (error) throw error;
+      console.log('✅ Push token synced to Supabase (Multi-token mode)');
+    } catch (error: any) {
+      console.error('❌ Error saving push token:', error.message);
+    }
   }
 
   return { expoPushToken };
