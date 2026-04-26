@@ -14,10 +14,6 @@ export default function HistoryScreen() {
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  
-  // Selection State
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const backgroundColor = useThemeColor({}, 'background');
   const cardBg = useThemeColor({ light: '#fff', dark: '#1c1c1e' }, 'background');
@@ -80,64 +76,9 @@ export default function HistoryScreen() {
     fetchData();
   }, [profileId]);
 
-  const exitEditMode = () => {
-    setIsEditMode(false);
-    setSelectedIds(new Set());
-  };
-
-  const toggleSelect = (id: string) => {
-    const next = new Set(selectedIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setSelectedIds(next);
-    Haptics.selectionAsync();
-  };
-
-  const handleSelectAll = () => {
-    if (selectedIds.size === history.length) {
-      setSelectedIds(new Set());
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } else {
-      setSelectedIds(new Set(history.map(h => h.uniqueId)));
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
-  };
-
-  const isAllSelected = history.length > 0 && selectedIds.size === history.length;
-
-  const handleDeleteSelected = async () => {
-    if (selectedIds.size === 0) return;
-    
-    Alert.alert(
-      'Delete Selected',
-      `Delete ${selectedIds.size} entries? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const logIds = Array.from(selectedIds).filter(id => id.startsWith('log-')).map(id => id.replace('log-', ''));
-              const alertIds = Array.from(selectedIds).filter(id => id.startsWith('alert-')).map(id => id.replace('alert-', ''));
-
-              if (logIds.length > 0) await supabase.from('gas_logs').delete().in('id', logIds);
-              if (alertIds.length > 0) await supabase.from('incidents').delete().in('id', alertIds);
-              
-              await fetchData();
-              exitEditMode();
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            } catch (e) { console.error(e); }
-          }
-        }
-      ]
-    );
-  };
-
   const renderItem = ({ item }: { item: any }) => {
     const date = new Date(item.timestamp);
     const isAlert = item.type === 'ALERT';
-    const isSelected = selectedIds.has(item.uniqueId);
     
     // Color logic
     const color = isAlert 
@@ -145,24 +86,8 @@ export default function HistoryScreen() {
       : getStatusColor(item.status);
     
     return (
-      <TouchableOpacity 
-        activeOpacity={0.8}
-        onLongPress={() => { setIsEditMode(true); toggleSelect(item.uniqueId); }}
-        onPress={() => isEditMode ? toggleSelect(item.uniqueId) : null}
-        style={[
-          styles.logCard, 
-          { backgroundColor: cardBg },
-          isSelected && { borderColor: accentColor, borderWidth: 2, backgroundColor: accentColor + '08' }
-        ]}
-      >
+      <View style={[styles.logCard, { backgroundColor: cardBg }]}>
         <View style={[styles.statusLine, { backgroundColor: color }]} />
-        
-        {isEditMode && (
-          <View style={styles.selectionCircle}>
-            <IconSymbol name={isSelected ? "checkmark.circle.fill" : "circle"} size={22} color={isSelected ? accentColor : secondaryText} />
-          </View>
-        )}
-
         <View style={styles.logContent}>
           <View style={styles.logHeader}>
             <Text style={[styles.logStatus, { color }]}>{isAlert ? `${item.alert_type} ALERT` : item.status.toUpperCase()}</Text>
@@ -177,7 +102,7 @@ export default function HistoryScreen() {
             <Text style={styles.logDate}> • {date.toLocaleDateString()}</Text>
           </View>
         </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -190,36 +115,7 @@ export default function HistoryScreen() {
           <Text style={styles.brandText}>H-FIRE HISTORY</Text>
           <Text style={[styles.title, { color: textColor }]}>All Events</Text>
         </View>
-        
-        {history.length > 0 && (
-          <View style={styles.headerActions}>
-            {isEditMode ? (
-              <TouchableOpacity onPress={exitEditMode} style={styles.doneBtn}>
-                <Text style={[styles.doneBtnText, { color: accentColor }]}>Done</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity onPress={() => setIsEditMode(true)} style={styles.selectBtn}>
-                <Text style={[styles.actionText, { color: accentColor }]}>Select</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
       </View>
-
-      {/* TOP ACTION BAR — visible in edit mode */}
-      {isEditMode && history.length > 0 && (
-        <View style={[styles.topActionBar, { backgroundColor: cardBg, borderBottomColor: secondaryText + '20' }]}>
-          <TouchableOpacity onPress={handleSelectAll} style={styles.topAction}>
-            <IconSymbol name={isAllSelected ? "checkmark.circle.fill" : "circle.grid.3x3.fill"} size={16} color={accentColor} />
-            <Text style={[styles.topActionText, { color: accentColor }]}>{isAllSelected ? 'Deselect All' : 'Select All'}</Text>
-          </TouchableOpacity>
-          <View style={styles.topActionDivider} />
-          <TouchableOpacity onPress={handleDeleteSelected} style={[styles.topAction, selectedIds.size === 0 && { opacity: 0.3 }]} disabled={selectedIds.size === 0}>
-            <IconSymbol name="minus.circle.fill" size={16} color="#FF3B30" />
-            <Text style={[styles.topActionText, { color: '#FF3B30' }]}>Delete{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}</Text>
-          </TouchableOpacity>
-        </View>
-      )}
 
       {loading ? (
         <View style={styles.center}><ActivityIndicator size="large" color={accentColor} /></View>
@@ -228,7 +124,7 @@ export default function HistoryScreen() {
           data={history}
           keyExtractor={(item) => item.uniqueId}
           renderItem={renderItem}
-          contentContainerStyle={[styles.list, isEditMode && { paddingBottom: 160 }]}
+          contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accentColor} />}
           ListEmptyComponent={
