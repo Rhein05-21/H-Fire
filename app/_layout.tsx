@@ -85,10 +85,10 @@ function RootLayoutContent() {
         await Audio.setAudioModeAsync({
           allowsRecordingIOS: false,
           staysActiveInBackground: true,
-          interruptionModeIOS: 1, // InterruptionModeIOS.DoNotMix
+          interruptionModeIOS: 1, // DoNotMix
           playsInSilentModeIOS: true,
-          shouldDuckAndroid: true,
-          interruptionModeAndroid: 1, // InterruptionModeAndroid.DoNotMix
+          shouldDuckAndroid: false, // Don't duck, we want full volume for alarms
+          interruptionModeAndroid: 1, // DoNotMix
           playThroughEarpieceAndroid: false,
         });
       } catch (e) {

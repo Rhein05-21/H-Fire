@@ -71,40 +71,50 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
   async function playSiren() {
     try {
       if (!incident) return;
+      console.log('📢 Attempting to play siren for:', incident.alert_type);
 
-      // Ensure audio mode is set for loud playback even in silent mode
+      // 1. Force robust audio settings
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         staysActiveInBackground: true,
-        interruptionModeIOS: 1, // InterruptionModeIOS.DoNotMix
+        interruptionModeIOS: 1, // DoNotMix
         playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        interruptionModeAndroid: 1, // InterruptionModeAndroid.DoNotMix
+        shouldDuckAndroid: false, // Don't duck, we want full volume
+        interruptionModeAndroid: 1, // DoNotMix
         playThroughEarpieceAndroid: false,
       });
 
+      // 2. Cleanup existing sound
       if (sound) {
-        try {
-          await sound.stopAsync();
-          await sound.unloadAsync();
-        } catch (e) {
-          // ignore unload errors
-        }
+        await sound.unloadAsync();
       }
 
+      // 3. Resolve Asset
       const isFire = incident.alert_type === 'FIRE';
       const soundFile = isFire 
         ? require('../assets/Fire Alarm.mp3') 
         : require('../assets/Smoke Alarm Sound.mp3');
 
+      // 4. Load and Play
       const { sound: newSound } = await Audio.Sound.createAsync(
         soundFile,
-        { shouldPlay: true, isLooping: true, volume: 1.0 }
+        { 
+          shouldPlay: true, 
+          isLooping: true, 
+          volume: 1.0,
+          androidImplementation: 'MediaPlayer', // More robust for simple alarm sounds
+        },
+        (status) => {
+          if (status.isLoaded && !status.isPlaying && visible) {
+            newSound.playAsync();
+          }
+        }
       );
+      
       setSound(newSound);
-      await newSound.playAsync();
+      console.log('✅ Siren loaded and playing');
     } catch (error) { 
-      console.error('CRITICAL: Failed to play siren', error); 
+      console.error('❌ CRITICAL: Failed to play siren', error); 
     }
   }
 
