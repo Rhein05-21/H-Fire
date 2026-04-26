@@ -57,6 +57,12 @@ export default function FamilyMembersScreen() {
   const [phoneError, setPhoneError] = useState('');
   const [emailError, setEmailError] = useState('');
 
+  const backgroundColor = useThemeColor({}, 'background');
+  const cardBg = useThemeColor({ light: '#fff', dark: '#1c1c1e' }, 'background');
+  const inputBg = useThemeColor({ light: '#f2f2f7', dark: '#2c2c2e' }, 'background');
+  const textColor = useThemeColor({}, 'text');
+  const secondaryText = useThemeColor({ light: '#8E8E93', dark: '#8E8E93' }, 'text');
+
   // VALIDATION HELPERS
   const validateName = (text: string) => {
     // Remove numbers from input immediately or just show error
@@ -168,9 +174,20 @@ export default function FamilyMembersScreen() {
       return;
     }
 
-    if (nameError || ageError || phoneError || emailError) {
-      Alert.alert('Error', 'Please fix the errors in the form.');
-      return;
+    if (nameError) {
+      return Alert.alert('Invalid Name', 'Should be at least 2 characters and no numbers.');
+    }
+
+    if (ageError) {
+      return Alert.alert('Invalid Age', 'Age must be at least 6 years old.');
+    }
+
+    if (phoneError) {
+      return Alert.alert('Invalid Phone', 'Phone number must be exactly 11 digits.');
+    }
+
+    if (emailError) {
+      return Alert.alert('Invalid Email', 'Please enter a valid email address.');
     }
 
     Alert.alert(
@@ -331,11 +348,11 @@ export default function FamilyMembersScreen() {
       )}
 
       {/* MEMBER MODAL */}
-      <Modal visible={modalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
+      <Modal visible={modalVisible} animationType="slide" presentationStyle="fullScreen">
+        <SafeAreaView style={{ flex: 1, backgroundColor: cardBg }}>
           <KeyboardAvoidingView 
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={[styles.modalContent, { backgroundColor: cardBg }]}
+            style={styles.modalContent}
           >
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: textColor }]}>
@@ -346,8 +363,12 @@ export default function FamilyMembersScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.form} showsVerticalScrollIndicator={false}>
-              <Text style={styles.label}>FULL NAME *</Text>
+            <ScrollView 
+              style={styles.form} 
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 40 }}
+            >
+              <Text style={styles.label}>NAME (FULL NAME / NICKNAME) *</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: inputBg, color: textColor }, nameError ? styles.inputError : null]}
                 value={fullName}
@@ -401,7 +422,7 @@ export default function FamilyMembersScreen() {
               </View>
 
               {relationship === 'Other' && (
-                <View>
+                <View style={{ marginTop: 10 }}>
                   <Text style={styles.label}>SPECIFY RELATIONSHIP *</Text>
                   <TextInput
                     style={[styles.input, { backgroundColor: inputBg, color: textColor }]}
@@ -468,7 +489,7 @@ export default function FamilyMembersScreen() {
               </View>
             </ScrollView>
           </KeyboardAvoidingView>
-        </View>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );

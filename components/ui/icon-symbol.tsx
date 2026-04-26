@@ -41,6 +41,12 @@ const MAPPING = {
   'square': 'check-box-outline-blank',
   'checkmark.square.fill': 'check-box',
   'arrow.left': 'arrow-back',
+  'calendar': 'event',
+  'circle': 'radio-button-unchecked',
+  'doc.text.magnifyingglass': 'manage-search',
+  'exclamationmark.shield.fill': 'security',
+  'cpu': 'memory',
+  'calendar.badge.clock': 'event-note',
 } as IconMapping;
 
 /**

@@ -124,6 +124,12 @@ export default function SettingsScreen() {
   };
 
   const linkDevice = async (mac: string) => {
+    // DEVICE LIMIT CHECK (Max 4)
+    if (myLinkedDevices.length >= 4) {
+      Alert.alert('Limit Reached', 'You can only link up to 4 devices to your account.');
+      return;
+    }
+
     try {
       const normalizedMac = mac.toUpperCase();
       const combinedName = `${lastName.trim()}, ${firstName.trim()}${middleName ? ' ' + middleName.trim() : ''}`;

@@ -14,6 +14,13 @@ export default function HistoryScreen() {
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Date & Pagination State
+  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const ITEMS_PER_PAGE = 10;
 
   const backgroundColor = useThemeColor({}, 'background');
   const cardBg = useThemeColor({ light: '#fff', dark: '#1c1c1e' }, 'background');
@@ -22,32 +29,41 @@ export default function HistoryScreen() {
   const borderColor = useThemeColor({ light: '#e5e5ea', dark: '#3a3a3c' }, 'background');
   const accentColor = '#2196F3';
 
-  const fetchData = async () => {
+  const fetchData = async (page = 1) => {
     if (!profileId) return;
+    if (page === 1) setLoading(true);
+    
     try {
-      // 1. Fetch Gas Logs (Regular Activity)
-      const { data: logData } = await supabase
-        .from('gas_logs')
-        .select('*')
-        .eq('profile_id', profileId)
-        .order('created_at', { ascending: false })
-        .limit(50);
+      const from = (page - 1) * ITEMS_PER_PAGE;
+      const to = from + ITEMS_PER_PAGE - 1;
 
-      // 2. Fetch Incident Alerts (Emergencies)
-      const { data: alertData } = await supabase
-        .from('incidents')
-        .select('*, devices(label)')
-        .eq('profile_id', profileId)
-        .order('start_time', { ascending: false })
-        .limit(30);
+      let logQuery = supabase.from('gas_logs').select('*').eq('profile_id', profileId).order('created_at', { ascending: false }).range(from, to);
+      let alertQuery = supabase.from('incidents').select('*, devices(label)').eq('profile_id', profileId).order('start_time', { ascending: false }).range(from, to);
 
-      // 3. Merge and Sort by Date
+      if (selectedDate) {
+        const startOfDay = new Date(selectedDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(selectedDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        logQuery = logQuery.gte('created_at', startOfDay.toISOString()).lte('created_at', endOfDay.toISOString());
+        alertQuery = alertQuery.gte('start_time', startOfDay.toISOString()).lte('start_time', endOfDay.toISOString());
+      }
+
+      const [{ data: logData }, { data: alertData }] = await Promise.all([logQuery, alertQuery]);
+
+      // Merge and Sort
       const merged = [
-        ...(logData || []).map(l => ({ ...l, type: 'ACTIVITY', timestamp: l.created_at, uniqueId: `log-${l.id}` })),
-        ...(alertData || []).map(a => ({ ...a, type: 'ALERT', timestamp: a.start_time, uniqueId: `alert-${a.id}` }))
+        ...(logData || []).map(l => ({ ...l, type: 'ACTIVITY', timestamp: l.created_at, uniqueId: `log-${l.id}-${l.created_at}` })),
+        ...(alertData || []).map(a => ({ ...a, type: 'ALERT', timestamp: a.start_time, uniqueId: `alert-${a.id}-${a.start_time}` }))
       ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-      setHistory(merged);
+      const sliced = merged.slice(0, ITEMS_PER_PAGE);
+      
+      if (page === 1) setHistory(sliced);
+      else setHistory(prev => [...prev, ...sliced]);
+
+      setHasMore(merged.length >= ITEMS_PER_PAGE);
     } catch (e) {
       console.error(e);
     } finally {
@@ -57,33 +73,92 @@ export default function HistoryScreen() {
   };
 
   useEffect(() => {
-    if (!profileId) return;
-    fetchData();
+    fetchData(1);
+    setCurrentPage(1);
 
     // REAL-TIME SUBSCRIPTION
     const channel = supabase
       .channel('history-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'gas_logs', filter: `profile_id=eq.${profileId}` }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents', filter: `profile_id=eq.${profileId}` }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gas_logs', filter: `profile_id=eq.${profileId}` }, () => fetchData(1))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents', filter: `profile_id=eq.${profileId}` }, () => fetchData(1))
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [profileId]);
+  }, [profileId, selectedDate]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    fetchData();
-  }, [profileId]);
+    fetchData(1);
+  }, [profileId, selectedDate]);
+
+  const handleLoadMore = () => {
+    if (hasMore && !loading) {
+      const nextPage = currentPage + 1;
+      setCurrentPage(nextPage);
+      fetchData(nextPage);
+    }
+  };
+
+  // --- CALENDAR GRID LOGIC ---
+  const renderCalendar = () => {
+    const calendarDate = selectedDate || new Date();
+    const daysInMonth = new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 0).getDate();
+    const days = [];
+    for (let i = 1; i <= daysInMonth; i++) days.push(i);
+    const monthKey = `${calendarDate.getFullYear()}-${calendarDate.getMonth()}`;
+
+    return (
+      <Modal visible={showCalendar} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.calendarCard, { backgroundColor: cardBg }]}>
+            <View style={styles.calendarHeader}>
+              <Text style={[styles.monthText, { color: textColor }]}>
+                {calendarDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 15, alignItems: 'center' }}>
+                <TouchableOpacity onPress={() => { setSelectedDate(null); setShowCalendar(false); }}>
+                  <Text style={{ color: accentColor, fontWeight: '800', fontSize: 12 }}>VIEW ALL</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setShowCalendar(false)}>
+                  <IconSymbol name="xmark.circle.fill" size={24} color={secondaryText} />
+                </TouchableOpacity>
+              </View>
+            </View>
+            
+            <View style={styles.daysGrid}>
+              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, idx) => (
+                <Text key={`label-${d}-${idx}`} style={styles.dayLabel}>{d}</Text>
+              ))}
+              {days.map(d => {
+                const isSelected = selectedDate && d === selectedDate.getDate() && calendarDate.getMonth() === selectedDate.getMonth();
+                return (
+                  <TouchableOpacity 
+                    key={`${monthKey}-${d}`} 
+                    onPress={() => {
+                      const newDate = new Date(calendarDate);
+                      newDate.setDate(d);
+                      setSelectedDate(newDate);
+                      setShowCalendar(false);
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    }}
+                    style={[styles.dayCell, isSelected && { backgroundColor: accentColor }]}
+                  >
+                    <Text style={[styles.dayText, { color: isSelected ? '#fff' : textColor }]}>{d}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
 
   const renderItem = ({ item }: { item: any }) => {
     const date = new Date(item.timestamp);
     const isAlert = item.type === 'ALERT';
-    
-    // Color logic
-    const color = isAlert 
-      ? (item.alert_type === 'FIRE' ? '#FF3B30' : '#FF9500') 
-      : getStatusColor(item.status);
+    const color = isAlert ? (item.alert_type === 'FIRE' ? '#FF3B30' : '#FF9500') : getStatusColor(item.status);
     
     return (
       <View style={[styles.logCard, { backgroundColor: cardBg }]}>
@@ -113,11 +188,18 @@ export default function HistoryScreen() {
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.brandText}>H-FIRE HISTORY</Text>
-          <Text style={[styles.title, { color: textColor }]}>All Events</Text>
+          <View style={styles.titleContainer}>
+            <Text style={[styles.title, { color: textColor }]}>All Events</Text>
+            <TouchableOpacity style={styles.calendarIconButton} onPress={() => setShowCalendar(true)}>
+              <IconSymbol name="calendar" size={24} color={accentColor} />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
-      {loading ? (
+      {renderCalendar()}
+
+      {loading && history.length === 0 ? (
         <View style={styles.center}><ActivityIndicator size="large" color={accentColor} /></View>
       ) : (
         <FlatList
@@ -127,10 +209,15 @@ export default function HistoryScreen() {
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accentColor} />}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={hasMore ? <ActivityIndicator style={{ marginVertical: 20 }} color={accentColor} /> : null}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <IconSymbol name="doc.text.magnifyingglass" size={50} color={borderColor} />
-              <Text style={[styles.emptyText, { color: secondaryText }]}>No history recorded yet.</Text>
+              <IconSymbol name="doc.text.magnifyingglass" size={50} color={secondaryText + '40'} />
+              <Text style={[styles.emptyText, { color: secondaryText }]}>
+                No history recorded yet {selectedDate ? `for ${selectedDate.toLocaleDateString()}` : ''}.
+              </Text>
             </View>
           }
         />
@@ -152,6 +239,8 @@ const styles = StyleSheet.create({
   actionText: { fontWeight: '800', fontSize: 16 },
   brandText: { color: '#2196F3', fontSize: 10, fontWeight: '900', letterSpacing: 2 },
   title: { fontSize: 34, fontWeight: '900', marginTop: 4 },
+  titleContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, width: '100%' },
+  calendarIconButton: { padding: 10, backgroundColor: 'rgba(33, 150, 243, 0.1)', borderRadius: 14, marginRight: 5 },
   tabContainer: { flexDirection: 'row', paddingHorizontal: 20, marginBottom: 10 },
   tab: { flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 3, borderBottomColor: 'transparent' },
   tabText: { fontSize: 15, fontWeight: '800' },
