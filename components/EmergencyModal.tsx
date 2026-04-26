@@ -35,6 +35,34 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [loadingContacts, setLoadingContacts] = useState(false);
 
+  // REAL-TIME STATUS & COLOR ANIMATION
+  const isFire = useMemo(() => {
+    if (!incident?.device_mac) return incident?.alert_type === 'FIRE';
+    const currentDevice = devices[incident.device_mac];
+    // Mirror system thresholds: > 1500 is Danger/Fire
+    return (currentDevice?.ppm || incident.ppm) > 1500;
+  }, [devices, incident]);
+
+  const [bgAnim] = useState(new Animated.Value(isFire ? 0 : 1));
+
+  useEffect(() => {
+    if (visible) {
+      Animated.timing(bgAnim, {
+        toValue: isFire ? 0 : 1,
+        duration: 800,
+        useNativeDriver: false,
+      }).start();
+      
+      // Re-sync siren if state transitions while modal is open
+      playSiren();
+    }
+  }, [isFire, visible]);
+
+  const dynamicBg = bgAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['rgba(211, 47, 47, 0.98)', 'rgba(255, 149, 0, 0.98)']
+  });
+
   // FETCH REAL CONTACTS
   useEffect(() => {
     if (visible && profileId) {
@@ -71,7 +99,6 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
   async function playSiren() {
     try {
       if (!incident) return;
-      console.log('📢 Attempting to play siren for:', incident.alert_type);
 
       // 1. Force robust audio settings
       await Audio.setAudioModeAsync({
@@ -79,18 +106,18 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
         staysActiveInBackground: true,
         interruptionModeIOS: 1, // DoNotMix
         playsInSilentModeIOS: true,
-        shouldDuckAndroid: false, // Don't duck, we want full volume
+        shouldDuckAndroid: false,
         interruptionModeAndroid: 1, // DoNotMix
         playThroughEarpieceAndroid: false,
       });
 
       // 2. Cleanup existing sound
       if (sound) {
+        await sound.stopAsync();
         await sound.unloadAsync();
       }
 
-      // 3. Resolve Asset
-      const isFire = incident.alert_type === 'FIRE';
+      // 3. Resolve Asset based on LIVE status
       const soundFile = isFire 
         ? require('../assets/Fire Alarm.mp3') 
         : require('../assets/Smoke Alarm Sound.mp3');
@@ -98,30 +125,21 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
       // 4. Load and Play
       const { sound: newSound } = await Audio.Sound.createAsync(
         soundFile,
-        { 
-          shouldPlay: true, 
-          isLooping: true, 
-          volume: 1.0,
-          androidImplementation: 'MediaPlayer', // More robust for simple alarm sounds
-        },
-        (status) => {
-          if (status.isLoaded && !status.isPlaying && visible) {
-            newSound.playAsync();
-          }
-        }
+        { shouldPlay: true, isLooping: true, volume: 1.0, androidImplementation: 'MediaPlayer' }
       );
-      
       setSound(newSound);
-      console.log('✅ Siren loaded and playing');
+      await newSound.playAsync();
     } catch (error) { 
-      console.error('❌ CRITICAL: Failed to play siren', error); 
+      console.error('CRITICAL: Failed to play siren', error); 
     }
   }
 
   async function stopSiren() {
     if (sound) {
-      await sound.stopAsync();
-      await sound.unloadAsync();
+      try {
+        await sound.stopAsync();
+        await sound.unloadAsync();
+      } catch (e) {}
       setSound(null);
     }
   }
@@ -129,7 +147,6 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
   useEffect(() => {
     let vibrationInterval: any;
     if (visible) {
-      playSiren();
       setShowCallOptions(false);
       Animated.loop(
         Animated.sequence([
@@ -140,9 +157,14 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
       vibrationInterval = setInterval(() => {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }, 1000);
-    } else { stopSiren(); }
+    } else { 
+      stopSiren(); 
+    }
 
-    return () => { if (vibrationInterval) clearInterval(vibrationInterval); stopSiren(); };
+    return () => { 
+      if (vibrationInterval) clearInterval(vibrationInterval); 
+      stopSiren(); 
+    };
   }, [visible]);
 
   const handleCall = (number: string) => {
@@ -156,18 +178,18 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
 
   if (!incident) return null;
 
-  const isFire = incident.alert_type === 'FIRE';
-
   return (
     <Modal visible={visible} transparent animationType="fade">
-      <View style={[styles.overlay, { backgroundColor: isFire ? 'rgba(211, 47, 47, 0.98)' : 'rgba(255, 149, 0, 0.98)' }]}>
+      <Animated.View style={[styles.overlay, { backgroundColor: dynamicBg }]}>
         <Animated.View style={[styles.alertCircle, { transform: [{ scale: pulseAnim }] }]}>
           <IconSymbol name={isFire ? "flame.fill" : "exclamationmark.triangle.fill"} size={80} color="#fff" />
         </Animated.View>
 
         {!showCallOptions ? (
           <View style={styles.content}>
-            <Text style={styles.emergencyTitle}>{isFire ? 'FIRE EMERGENCY ALERT' : 'SMOKE / GAS ALERT'}</Text>
+            <Text style={styles.emergencyTitle}>
+              {isFire ? 'FIRE EMERGENCY ALERT' : 'WARNING: GAS LEAK / SMOKE DETECTED'}
+            </Text>
             <Text style={styles.houseName}>{incident.house_name}</Text>
             <Text style={styles.locationDetail}>{incident.label.toUpperCase()}</Text>
             
@@ -240,7 +262,7 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
           </View>
         )}
 
-      </View>
+      </Animated.View>
     </Modal>
   );
 }
@@ -249,7 +271,7 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
   alertCircle: { width: 140, height: 140, borderRadius: 70, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginBottom: 40 },
   content: { alignItems: 'center', width: '100%' },
-  emergencyTitle: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 4, marginBottom: 20 },
+  emergencyTitle: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 4, marginBottom: 20, textAlign: 'center' },
   houseName: { color: '#fff', fontSize: 32, fontWeight: '900', textAlign: 'center' },
   locationDetail: { color: 'rgba(255,255,255,0.8)', fontSize: 18, fontWeight: '700', marginTop: 5, letterSpacing: 1 },
   ppmBadge: { backgroundColor: '#fff', paddingHorizontal: 25, paddingVertical: 15, borderRadius: 20, alignItems: 'center', marginTop: 30, marginBottom: 30, elevation: 10 },
@@ -272,4 +294,3 @@ const styles = StyleSheet.create({
   backBtn: { padding: 20 },
   backBtnText: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 2 }
 });
-
