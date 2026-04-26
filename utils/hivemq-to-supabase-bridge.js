@@ -215,21 +215,46 @@ async function processMessage(topic, payload) {
       console.log(`🚨 ${alertType} DETECTED at ${mac}!`);
       const { data: device } = await supabase.from('devices').select('house_name, label').eq('mac', mac).single();
       
-      let insertedIncidentId = null;
-      if (status === 'Danger') {
+      let finalIncidentId = null;
+
+      // 1. Check for an existing ACTIVE incident for this device
+      const { data: existingIncident } = await supabase
+        .from('incidents')
+        .select('id')
+        .eq('device_mac', mac)
+        .eq('status', 'Active')
+        .order('start_time', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (existingIncident) {
+        // UPDATE existing incident (Overwrite PPM)
+        await supabase
+          .from('incidents')
+          .update({ ppm_at_trigger: ppm })
+          .eq('id', existingIncident.id);
+        finalIncidentId = existingIncident.id;
+        console.log(`🔄 Updated existing incident: ${finalIncidentId}`);
+      } else if (status === 'Danger') {
+        // CREATE new incident only if none exists and status is Danger
         const { data: incident } = await supabase.from('incidents').insert([{
-          device_mac: mac, status: 'Active', ppm_at_trigger: ppm,
-          alert_type: alertType, profile_id: ownerId
+          device_mac: mac, 
+          status: 'Active', 
+          ppm_at_trigger: ppm,
+          alert_type: alertType, 
+          profile_id: ownerId
         }]).select('id').single();
-        insertedIncidentId = incident?.id;
+        finalIncidentId = incident?.id;
+        console.log(`🆕 Created new incident: ${finalIncidentId}`);
       }
 
+      // 2. Send Enriched Push (This will now overwrite/update on the phone tray)
       await sendPushNotification(
         ownerId, 
         device?.house_name || 'Home', 
         alertType, 
         ppm, 
-        insertedIncidentId, 
+        finalIncidentId, 
         mac, 
         device?.label || 'Unknown Room'
       );
