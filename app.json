@@ -49,7 +49,7 @@
       ]
     ],
     "updates": {
-      "url": "https://u.expo.dev/94a8c506-8d0e-4097-b110-cccb6829fbbe"
+      "url": "https://u.expo.dev/0d1a5ce6-68ef-487a-9efe-25a61a61f8b2"
     },
     "runtimeVersion": {
       "policy": "appVersion"
@@ -60,7 +60,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "94a8c506-8d0e-4097-b110-cccb6829fbbe"
+        "projectId": "0d1a5ce6-68ef-487a-9efe-25a61a61f8b2"
       },
       "clerkProxyUrl": "https://valued-vulture-7.clerk.accounts.dev"
     }
