@@ -44,63 +44,44 @@ refreshDeviceCache();
 setInterval(refreshDeviceCache, 30000);
 
 // --- PUSH NOTIFICATION LOGIC ---
-async function sendPushNotification(ownerId, houseName, alertType, ppm, incidentId, deviceMac, label) {
+async function sendPushNotification(ownerId, houseName, alertType, ppm) {
   try {
-    // 1. Get ALL registered tokens for this user
-    const { data: tokens } = await supabase
-      .from('user_push_tokens')
-      .select('token')
-      .eq('profile_id', ownerId);
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('push_token, name')
+      .eq('id', ownerId)
+      .single();
 
-    if (!tokens || tokens.length === 0) {
-      console.log(`⚠️ No active push tokens found for user: ${ownerId}`);
+    if (!profile?.push_token) {
+      console.log(`⚠️ No push token found for user: ${ownerId}`);
       return;
     }
 
-    console.log(`🔔 Sending Enriched Push Alert to ${tokens.length} device(s)`);
+    console.log(`🔔 Sending Push Alert to: ${profile.name}`);
 
-    // 2. Prepare the notification payloads
-    const messages = tokens.map(entry => ({
-      to: entry.token,
+    const message = {
+      to: profile.push_token,
       sound: 'default',
-      title: alertType === 'FIRE' ? '🔥 FIRE ALERT' : '⚠️ GAS/SMOKE ALERT',
-      body: `${houseName} · ${label} · ${ppm} PPM`,
-      data: { 
-        incidentId, 
-        device_mac: deviceMac, 
-        alert_type: alertType, 
-        house_name: houseName, 
-        label, 
-        ppm 
-      },
+      title: `🔥 EMERGENCY: ${alertType} DETECTED`,
+      body: `${houseName}: Critical level detected (${ppm} PPM). Check the app!`,
+      data: { houseName, alertType, ppm },
       priority: 'high',
-      channelId: 'emergency-alerts',
-      // ANTI-SPAM & GROUPING (Cross-Platform)
-      android: {
-        tag: deviceMac, // Android: Overwrites existing notification from this device
-        collapseKey: deviceMac,
-      },
-      ios: {
-        threadId: deviceMac, // iOS: Groups notifications from this device into one stack
-        _displayInForeground: true,
-      },
-      mutableContent: true,
-    }));
+      channelId: 'emergency-alerts', // Matches the channel created in the app for background delivery
+    };
 
-    // 3. Batch send to Expo Push API
     const response = await fetch('https://exp.host/--/api/v2/push/send', {
       method: 'POST',
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(messages),
+      body: JSON.stringify(message),
     });
 
     const result = await response.json();
-    console.log('✅ Expo Batch Response:', result);
+    console.log('✅ Expo Response:', result);
   } catch (error) {
-    console.error('❌ Batch Push Error:', error.message);
+    console.error('❌ Push Error:', error.message);
   }
 }
 
@@ -213,26 +194,16 @@ async function processMessage(topic, payload) {
 
     if (status === 'Danger' || status === 'Warning') {
       console.log(`🚨 ${alertType} DETECTED at ${mac}!`);
-      const { data: device } = await supabase.from('devices').select('house_name, label').eq('mac', mac).single();
+      const { data: device } = await supabase.from('devices').select('house_name').eq('mac', mac).single();
       
-      let insertedIncidentId = null;
       if (status === 'Danger') {
-        const { data: incident } = await supabase.from('incidents').insert([{
+        await supabase.from('incidents').insert([{
           device_mac: mac, status: 'Active', ppm_at_trigger: ppm,
           alert_type: alertType, profile_id: ownerId
-        }]).select('id').single();
-        insertedIncidentId = incident?.id;
+        }]);
       }
 
-      await sendPushNotification(
-        ownerId, 
-        device?.house_name || 'Home', 
-        alertType, 
-        ppm, 
-        insertedIncidentId, 
-        mac, 
-        device?.label || 'Unknown Room'
-      );
+      await sendPushNotification(ownerId, device?.house_name || 'Home', alertType, ppm);
     }
   }
 }
