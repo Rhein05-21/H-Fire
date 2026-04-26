@@ -141,28 +141,36 @@ function RootLayoutContent() {
         { event: 'INSERT', schema: 'public', table: 'incidents' },
         async (payload) => {
           const newIncident = payload.new;
+          
+          // Rely on Supabase RLS for filtering - we only get what we are allowed to see.
+          // For safety, still check if it's Active and belongs to the user (if not admin)
           if (newIncident.status !== 'Active') return;
-          if (!isAdmin && newIncident.profile_id !== profileId) return;
+          if (!isAdmin && newIncident.profile_id && newIncident.profile_id !== profileId) return;
 
-          const { data: device } = await supabase
-            .from('devices')
-            .select('house_name, label')
-            .eq('mac', newIncident.device_mac)
-            .single();
+          try {
+            const { data: device } = await supabase
+              .from('devices')
+              .select('house_name, label')
+              .eq('mac', newIncident.device_mac)
+              .single();
 
-          triggerEmergency({
-            id: newIncident.id,
-            house_name: device?.house_name || 'Unknown House',
-            label: device?.label || 'Unknown Room',
-            ppm: newIncident.ppm_at_trigger,
-            alert_type: newIncident.alert_type as any,
-            device_mac: newIncident.device_mac
-          });
+            triggerEmergency({
+              id: newIncident.id,
+              house_name: device?.house_name || 'Emergency House',
+              label: device?.label || 'Emergency Unit',
+              ppm: newIncident.ppm_at_trigger || 0,
+              alert_type: newIncident.alert_type as any,
+              device_mac: newIncident.device_mac
+            });
+          } catch (err) {
+            console.error('Error handling new incident:', err);
+          }
         }
       )
       .subscribe();
-    return () => { channel.unsubscribe(); };
-  }, [isAdmin, profileId]);
+      
+    return () => { supabase.removeChannel(channel); };
+  }, [isAdmin, profileId, triggerEmergency]);
 
   useEffect(() => {
     if (!loading) {

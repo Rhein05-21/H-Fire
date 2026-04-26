@@ -9,6 +9,12 @@ import { supabase } from '@/utils/supabase';
 
 const { width, height } = Dimensions.get('window');
 
+interface EmergencyModalProps {
+  visible: boolean;
+  incident: any;
+  onClose: () => void;
+}
+
 interface FamilyMember {
   id: string | number;
   profile_id: string;
