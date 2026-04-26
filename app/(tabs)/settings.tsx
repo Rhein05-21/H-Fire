@@ -539,7 +539,7 @@ export default function SettingsScreen() {
             {mapRegion ? (
               <MapView
                 ref={mapRef}
-                provider={PROVIDER_GOOGLE}
+                provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
                 style={styles.map}
                 region={mapRegion}
                 onRegionChangeComplete={(r) => setMapRegion(r)}
