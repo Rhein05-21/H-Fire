@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { StyleSheet, View, Text, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl, Platform, Alert } from 'react-native';
+import { StyleSheet, View, Text, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl, Platform, Alert, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
@@ -107,6 +107,8 @@ export default function HistoryScreen() {
     const days = [];
     for (let i = 1; i <= daysInMonth; i++) days.push(i);
     const monthKey = `${calendarDate.getFullYear()}-${calendarDate.getMonth()}`;
+    const today = new Date();
+    today.setHours(0,0,0,0);
 
     return (
       <Modal visible={showCalendar} transparent animationType="fade">
@@ -116,14 +118,9 @@ export default function HistoryScreen() {
               <Text style={[styles.monthText, { color: textColor }]}>
                 {calendarDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
               </Text>
-              <View style={{ flexDirection: 'row', gap: 15, alignItems: 'center' }}>
-                <TouchableOpacity onPress={() => { setSelectedDate(null); setShowCalendar(false); }}>
-                  <Text style={{ color: accentColor, fontWeight: '800', fontSize: 12 }}>VIEW ALL</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setShowCalendar(false)}>
-                  <IconSymbol name="xmark.circle.fill" size={24} color={secondaryText} />
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity onPress={() => setShowCalendar(false)}>
+                <IconSymbol name="xmark.circle.fill" size={24} color={secondaryText} />
+              </TouchableOpacity>
             </View>
             
             <View style={styles.daysGrid}>
@@ -131,20 +128,27 @@ export default function HistoryScreen() {
                 <Text key={`label-${d}-${idx}`} style={styles.dayLabel}>{d}</Text>
               ))}
               {days.map(d => {
+                const cellDate = new Date(calendarDate.getFullYear(), calendarDate.getMonth(), d);
+                const isFuture = cellDate > today;
                 const isSelected = selectedDate && d === selectedDate.getDate() && calendarDate.getMonth() === selectedDate.getMonth();
+                
                 return (
                   <TouchableOpacity 
                     key={`${monthKey}-${d}`} 
                     onPress={() => {
-                      const newDate = new Date(calendarDate);
-                      newDate.setDate(d);
-                      setSelectedDate(newDate);
+                      if (isFuture) return;
+                      setSelectedDate(cellDate);
                       setShowCalendar(false);
                       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                     }}
-                    style={[styles.dayCell, isSelected && { backgroundColor: accentColor }]}
+                    disabled={isFuture}
+                    style={[
+                      styles.dayCell, 
+                      isSelected && { backgroundColor: accentColor },
+                      isFuture && { opacity: 0.2 }
+                    ]}
                   >
-                    <Text style={[styles.dayText, { color: isSelected ? '#fff' : textColor }]}>{d}</Text>
+                    <Text style={[styles.dayText, { color: isSelected ? '#fff' : (isFuture ? secondaryText : textColor) }]}>{d}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -189,7 +193,7 @@ export default function HistoryScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.brandText}>H-FIRE HISTORY</Text>
           <View style={styles.titleContainer}>
-            <Text style={[styles.title, { color: textColor }]}>All Events</Text>
+            <Text style={[styles.title, { color: textColor }]}>Event Logs</Text>
             <TouchableOpacity style={styles.calendarIconButton} onPress={() => setShowCalendar(true)}>
               <IconSymbol name="calendar" size={24} color={accentColor} />
             </TouchableOpacity>
@@ -228,26 +232,24 @@ export default function HistoryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 25, paddingTop: 20, marginBottom: 15 },
-  headerActions: { paddingBottom: 5 },
-  editHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  countBadge: { backgroundColor: '#2196F320', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
-  countBadgeText: { color: '#2196F3', fontSize: 11, fontWeight: '900' },
-  selectBtn: { paddingVertical: 6, paddingHorizontal: 2 },
-  doneBtn: { paddingVertical: 6 },
-  doneBtnText: { fontWeight: '800', fontSize: 16 },
-  actionText: { fontWeight: '800', fontSize: 16 },
+  header: { paddingHorizontal: 25, paddingTop: 20, marginBottom: 15 },
   brandText: { color: '#2196F3', fontSize: 10, fontWeight: '900', letterSpacing: 2 },
-  title: { fontSize: 34, fontWeight: '900', marginTop: 4 },
   titleContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, width: '100%' },
-  calendarIconButton: { padding: 10, backgroundColor: 'rgba(33, 150, 243, 0.1)', borderRadius: 14, marginRight: 5 },
-  tabContainer: { flexDirection: 'row', paddingHorizontal: 20, marginBottom: 10 },
-  tab: { flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 3, borderBottomColor: 'transparent' },
-  tabText: { fontSize: 15, fontWeight: '800' },
+  title: { fontSize: 34, fontWeight: '900' },
+  calendarIconButton: { padding: 10, backgroundColor: 'rgba(33, 150, 243, 0.1)', borderRadius: 14 },
+  
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  calendarCard: { width: '100%', borderRadius: 24, padding: 20, elevation: 10 },
+  calendarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  monthText: { fontSize: 18, fontWeight: '900' },
+  daysGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-start' },
+  dayLabel: { width: '14.28%', textAlign: 'center', fontSize: 12, fontWeight: '800', color: '#8E8E93', marginBottom: 15 },
+  dayCell: { width: '14.28%', height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 10, marginBottom: 5 },
+  dayText: { fontSize: 14, fontWeight: '700' },
+
   list: { padding: 20, paddingBottom: 120 },
-  logCard: { borderRadius: 20, marginBottom: 15, flexDirection: 'row', overflow: 'hidden', borderWidth: 2, borderColor: 'transparent', ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 }, android: { elevation: 2 } }) },
+  logCard: { borderRadius: 20, marginBottom: 15, flexDirection: 'row', overflow: 'hidden', ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 }, android: { elevation: 2 } }) },
   statusLine: { width: 5 },
-  selectionCircle: { width: 54, justifyContent: 'center', alignItems: 'center' },
   logContent: { flex: 1, padding: 18 },
   logHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   logStatus: { fontSize: 11, fontWeight: '900', letterSpacing: 1 },
@@ -258,28 +260,6 @@ const styles = StyleSheet.create({
   logDevice: { fontSize: 10, color: '#8E8E93', fontWeight: '700' },
   logDate: { fontSize: 10, color: '#8E8E93', fontWeight: '600' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: 100 },
-  emptyText: { marginTop: 15, fontWeight: '700', fontSize: 14 },
-
-  bottomBar: { 
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    flexDirection: 'row', alignItems: 'center',
-    paddingTop: 16, paddingBottom: 38, paddingHorizontal: 10,
-    borderTopWidth: 1,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    ...Platform.select({ ios: { shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10 }, android: { elevation: 20 } })
-  },
-  bottomAction: { flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 4 },
-  bottomActionText: { fontWeight: '800', fontSize: 11, textAlign: 'center' },
-  bottomDivider: { width: 1, height: 36, backgroundColor: 'rgba(142,142,147,0.2)' },
-
-  topActionBar: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 10, paddingHorizontal: 10,
-    borderBottomWidth: 1,
-    marginBottom: 4,
-  },
-  topAction: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 6 },
-  topActionText: { fontWeight: '800', fontSize: 12 },
-  topActionDivider: { width: 1, height: 24, backgroundColor: 'rgba(142,142,147,0.25)' },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: 80 },
+  emptyText: { marginTop: 15, fontWeight: '700', fontSize: 14, textAlign: 'center', paddingHorizontal: 40 },
 });
