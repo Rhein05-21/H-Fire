@@ -11,32 +11,47 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export default function HistoryScreen() {
   const { profileId } = useUser();
-  const [logs, setLogs] = useState<any[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
   // Selection State
   const [isEditMode, setIsEditMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const backgroundColor = useThemeColor({}, 'background');
   const cardBg = useThemeColor({ light: '#fff', dark: '#1c1c1e' }, 'background');
   const textColor = useThemeColor({}, 'text');
   const secondaryText = useThemeColor({ light: '#8E8E93', dark: '#8E8E93' }, 'text');
+  const borderColor = useThemeColor({ light: '#e5e5ea', dark: '#3a3a3c' }, 'background');
   const accentColor = '#2196F3';
 
-  const fetchHistory = async () => {
+  const fetchData = async () => {
     if (!profileId) return;
     try {
-      const { data, error } = await supabase
+      // 1. Fetch Gas Logs (Regular Activity)
+      const { data: logData } = await supabase
         .from('gas_logs')
         .select('*')
         .eq('profile_id', profileId)
         .order('created_at', { ascending: false })
-        .limit(100);
+        .limit(50);
 
-      if (data) setLogs(data);
-      if (error) console.error('History Fetch Error:', error.message);
+      // 2. Fetch Incident Alerts (Emergencies)
+      const { data: alertData } = await supabase
+        .from('incidents')
+        .select('*, devices(label)')
+        .eq('profile_id', profileId)
+        .order('start_time', { ascending: false })
+        .limit(30);
+
+      // 3. Merge and Sort by Date
+      const merged = [
+        ...(logData || []).map(l => ({ ...l, type: 'ACTIVITY', timestamp: l.created_at, uniqueId: `log-${l.id}` })),
+        ...(alertData || []).map(a => ({ ...a, type: 'ALERT', timestamp: a.start_time, uniqueId: `alert-${a.id}` }))
+      ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      setHistory(merged);
     } catch (e) {
       console.error(e);
     } finally {
@@ -46,13 +61,23 @@ export default function HistoryScreen() {
   };
 
   useEffect(() => {
-    fetchHistory();
+    if (!profileId) return;
+    fetchData();
+
+    // REAL-TIME SUBSCRIPTION
+    const channel = supabase
+      .channel('history-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gas_logs', filter: `profile_id=eq.${profileId}` }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents', filter: `profile_id=eq.${profileId}` }, () => fetchData())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [profileId]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    fetchHistory();
+    fetchData();
   }, [profileId]);
 
   const exitEditMode = () => {
@@ -60,7 +85,7 @@ export default function HistoryScreen() {
     setSelectedIds(new Set());
   };
 
-  const toggleSelect = (id: number) => {
+  const toggleSelect = (id: string) => {
     const next = new Set(selectedIds);
     if (next.has(id)) next.delete(id);
     else next.add(id);
@@ -69,71 +94,39 @@ export default function HistoryScreen() {
   };
 
   const handleSelectAll = () => {
-    if (selectedIds.size === logs.length) {
-      // Deselect all
+    if (selectedIds.size === history.length) {
       setSelectedIds(new Set());
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } else {
-      // Select all
-      setSelectedIds(new Set(logs.map(l => l.id)));
+      setSelectedIds(new Set(history.map(h => h.uniqueId)));
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
   };
 
-  const isAllSelected = logs.length > 0 && selectedIds.size === logs.length;
-
-  const handleClearAll = () => {
-    Alert.alert(
-      'Clear All History',
-      `This will permanently delete ALL ${logs.length} recorded gas logs. This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete All', 
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from('gas_logs')
-                .delete()
-                .eq('profile_id', profileId);
-              
-              if (!error) {
-                setLogs([]);
-                exitEditMode();
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              }
-            } catch (e) { console.error(e); }
-          }
-        }
-      ]
-    );
-  };
+  const isAllSelected = history.length > 0 && selectedIds.size === history.length;
 
   const handleDeleteSelected = async () => {
     if (selectedIds.size === 0) return;
     
     Alert.alert(
       'Delete Selected',
-      `Are you sure you want to delete ${selectedIds.size} selected ${selectedIds.size === 1 ? 'entry' : 'entries'}? This cannot be undone.`,
+      `Delete ${selectedIds.size} entries? This cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { 
-          text: `Delete ${selectedIds.size} ${selectedIds.size === 1 ? 'Entry' : 'Entries'}`, 
+          text: 'Delete', 
           style: 'destructive',
           onPress: async () => {
             try {
-              const idsArray = Array.from(selectedIds);
-              const { error } = await supabase
-                .from('gas_logs')
-                .delete()
-                .in('id', idsArray);
+              const logIds = Array.from(selectedIds).filter(id => id.startsWith('log-')).map(id => id.replace('log-', ''));
+              const alertIds = Array.from(selectedIds).filter(id => id.startsWith('alert-')).map(id => id.replace('alert-', ''));
+
+              if (logIds.length > 0) await supabase.from('gas_logs').delete().in('id', logIds);
+              if (alertIds.length > 0) await supabase.from('incidents').delete().in('id', alertIds);
               
-              if (!error) {
-                setLogs(prev => prev.filter(log => !selectedIds.has(log.id)));
-                setSelectedIds(new Set());
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              }
+              await fetchData();
+              exitEditMode();
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             } catch (e) { console.error(e); }
           }
         }
@@ -141,43 +134,46 @@ export default function HistoryScreen() {
     );
   };
 
-  const renderLog = ({ item }: { item: any }) => {
-    const date = new Date(item.created_at);
-    const color = getStatusColor(item.status);
-    const isSelected = selectedIds.has(item.id);
+  const renderItem = ({ item }: { item: any }) => {
+    const date = new Date(item.timestamp);
+    const isAlert = item.type === 'ALERT';
+    const isSelected = selectedIds.has(item.uniqueId);
+    
+    // Color logic
+    const color = isAlert 
+      ? (item.alert_type === 'FIRE' ? '#FF3B30' : '#FF9500') 
+      : getStatusColor(item.status);
     
     return (
       <TouchableOpacity 
         activeOpacity={0.8}
-        onLongPress={() => { setIsEditMode(true); toggleSelect(item.id); }}
-        onPress={() => isEditMode ? toggleSelect(item.id) : null}
+        onLongPress={() => { setIsEditMode(true); toggleSelect(item.uniqueId); }}
+        onPress={() => isEditMode ? toggleSelect(item.uniqueId) : null}
         style={[
           styles.logCard, 
           { backgroundColor: cardBg },
           isSelected && { borderColor: accentColor, borderWidth: 2, backgroundColor: accentColor + '08' }
         ]}
       >
-        {!isEditMode && <View style={[styles.statusLine, { backgroundColor: color }]} />}
+        <View style={[styles.statusLine, { backgroundColor: color }]} />
         
         {isEditMode && (
           <View style={styles.selectionCircle}>
-            <IconSymbol 
-              name={isSelected ? "checkmark.circle.fill" : "circle"} 
-              size={22} 
-              color={isSelected ? accentColor : secondaryText} 
-            />
+            <IconSymbol name={isSelected ? "checkmark.circle.fill" : "circle"} size={22} color={isSelected ? accentColor : secondaryText} />
           </View>
         )}
 
         <View style={styles.logContent}>
           <View style={styles.logHeader}>
-            <Text style={[styles.logStatus, { color }]}>{item.status.toUpperCase()}</Text>
+            <Text style={[styles.logStatus, { color }]}>{isAlert ? `${item.alert_type} ALERT` : item.status.toUpperCase()}</Text>
             <Text style={styles.logTime}>{date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
           </View>
-          <Text style={[styles.logPpm, { color: textColor }]}>{item.ppm_level} <Text style={styles.ppmUnit}>PPM</Text></Text>
+          <Text style={[styles.logPpm, { color: textColor }]}>
+            {isAlert ? item.ppm_at_trigger : item.ppm_level} <Text style={styles.ppmUnit}>PPM</Text>
+          </Text>
           <View style={styles.deviceRow}>
-            <IconSymbol name="cpu" size={10} color={secondaryText} />
-            <Text style={styles.logDevice}> {item.device_mac}</Text>
+            <IconSymbol name={isAlert ? "exclamationmark.shield.fill" : "cpu"} size={10} color={secondaryText} />
+            <Text style={styles.logDevice}> {isAlert ? (item.devices?.label || 'Alert Event') : item.device_mac}</Text>
             <Text style={styles.logDate}> • {date.toLocaleDateString()}</Text>
           </View>
         </View>
@@ -191,23 +187,16 @@ export default function HistoryScreen() {
       
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.brandText}>EVENT LOGS</Text>
-          <Text style={[styles.title, { color: textColor }]}>History</Text>
+          <Text style={styles.brandText}>H-FIRE HISTORY</Text>
+          <Text style={[styles.title, { color: textColor }]}>All Events</Text>
         </View>
         
-        {logs.length > 0 && (
+        {history.length > 0 && (
           <View style={styles.headerActions}>
             {isEditMode ? (
-              <View style={styles.editHeaderRow}>
-                {selectedIds.size > 0 && (
-                  <View style={styles.countBadge}>
-                    <Text style={styles.countBadgeText}>{selectedIds.size} selected</Text>
-                  </View>
-                )}
-                <TouchableOpacity onPress={exitEditMode} style={styles.doneBtn}>
-                  <Text style={[styles.doneBtnText, { color: accentColor }]}>Done</Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity onPress={exitEditMode} style={styles.doneBtn}>
+                <Text style={[styles.doneBtnText, { color: accentColor }]}>Done</Text>
+              </TouchableOpacity>
             ) : (
               <TouchableOpacity onPress={() => setIsEditMode(true)} style={styles.selectBtn}>
                 <Text style={[styles.actionText, { color: accentColor }]}>Select</Text>
@@ -218,37 +207,16 @@ export default function HistoryScreen() {
       </View>
 
       {/* TOP ACTION BAR — visible in edit mode */}
-      {isEditMode && logs.length > 0 && (
+      {isEditMode && history.length > 0 && (
         <View style={[styles.topActionBar, { backgroundColor: cardBg, borderBottomColor: secondaryText + '20' }]}>
           <TouchableOpacity onPress={handleSelectAll} style={styles.topAction}>
-            <IconSymbol
-              name={isAllSelected ? "checkmark.circle.fill" : "circle.grid.3x3.fill"}
-              size={16}
-              color={accentColor}
-            />
-            <Text style={[styles.topActionText, { color: accentColor }]}>
-              {isAllSelected ? 'Deselect All' : 'Select All'}
-            </Text>
+            <IconSymbol name={isAllSelected ? "checkmark.circle.fill" : "circle.grid.3x3.fill"} size={16} color={accentColor} />
+            <Text style={[styles.topActionText, { color: accentColor }]}>{isAllSelected ? 'Deselect All' : 'Select All'}</Text>
           </TouchableOpacity>
-
           <View style={styles.topActionDivider} />
-
-          <TouchableOpacity
-            onPress={handleDeleteSelected}
-            style={[styles.topAction, selectedIds.size === 0 && { opacity: 0.3 }]}
-            disabled={selectedIds.size === 0}
-          >
+          <TouchableOpacity onPress={handleDeleteSelected} style={[styles.topAction, selectedIds.size === 0 && { opacity: 0.3 }]} disabled={selectedIds.size === 0}>
             <IconSymbol name="minus.circle.fill" size={16} color="#FF3B30" />
-            <Text style={[styles.topActionText, { color: '#FF3B30' }]}>
-              Delete{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
-            </Text>
-          </TouchableOpacity>
-
-          <View style={styles.topActionDivider} />
-
-          <TouchableOpacity onPress={handleClearAll} style={styles.topAction}>
-            <IconSymbol name="trash.fill" size={16} color="#FF3B30" />
-            <Text style={[styles.topActionText, { color: '#FF3B30' }]}>Clear All</Text>
+            <Text style={[styles.topActionText, { color: '#FF3B30' }]}>Delete{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -256,62 +224,20 @@ export default function HistoryScreen() {
       {loading ? (
         <View style={styles.center}><ActivityIndicator size="large" color={accentColor} /></View>
       ) : (
-        <>
-          <FlatList
-            data={logs}
-            keyExtractor={(item) => item.id.toString()}
-            renderItem={renderLog}
-            contentContainerStyle={[styles.list, isEditMode && { paddingBottom: 160 }]}
-            showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accentColor} />}
-            ListEmptyComponent={
-              <View style={styles.empty}>
-                <IconSymbol name="doc.text.magnifyingglass" size={50} color={secondaryText} />
-                <Text style={[styles.emptyText, { color: secondaryText }]}>No activity recorded yet.</Text>
-              </View>
-            }
-          />
-
-          {isEditMode && (
-            <View style={[styles.bottomBar, { backgroundColor: cardBg, borderTopColor: secondaryText + '20' }]}>
-              
-              {/* Select All / Deselect All */}
-              <TouchableOpacity onPress={handleSelectAll} style={styles.bottomAction}>
-                <IconSymbol
-                  name={isAllSelected ? "checkmark.circle.fill" : "circle.grid.3x3.fill"}
-                  size={20}
-                  color={accentColor}
-                />
-                <Text style={[styles.bottomActionText, { color: accentColor }]}>
-                  {isAllSelected ? 'Deselect All' : 'Select All'}
-                </Text>
-              </TouchableOpacity>
-
-              <View style={styles.bottomDivider} />
-
-              {/* Delete Selected */}
-              <TouchableOpacity
-                onPress={handleDeleteSelected}
-                style={[styles.bottomAction, selectedIds.size === 0 && { opacity: 0.3 }]}
-                disabled={selectedIds.size === 0}
-              >
-                <IconSymbol name="minus.circle.fill" size={20} color="#FF3B30" />
-                <Text style={[styles.bottomActionText, { color: '#FF3B30' }]}>
-                  Delete{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
-                </Text>
-              </TouchableOpacity>
-
-              <View style={styles.bottomDivider} />
-
-              {/* Clear All */}
-              <TouchableOpacity onPress={handleClearAll} style={styles.bottomAction}>
-                <IconSymbol name="trash.fill" size={20} color="#FF3B30" />
-                <Text style={[styles.bottomActionText, { color: '#FF3B30' }]}>Clear All</Text>
-              </TouchableOpacity>
-
+        <FlatList
+          data={history}
+          keyExtractor={(item) => item.uniqueId}
+          renderItem={renderItem}
+          contentContainerStyle={[styles.list, isEditMode && { paddingBottom: 160 }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accentColor} />}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <IconSymbol name="doc.text.magnifyingglass" size={50} color={borderColor} />
+              <Text style={[styles.emptyText, { color: secondaryText }]}>No history recorded yet.</Text>
             </View>
-          )}
-        </>
+          }
+        />
       )}
     </SafeAreaView>
   );
@@ -330,6 +256,9 @@ const styles = StyleSheet.create({
   actionText: { fontWeight: '800', fontSize: 16 },
   brandText: { color: '#2196F3', fontSize: 10, fontWeight: '900', letterSpacing: 2 },
   title: { fontSize: 34, fontWeight: '900', marginTop: 4 },
+  tabContainer: { flexDirection: 'row', paddingHorizontal: 20, marginBottom: 10 },
+  tab: { flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 3, borderBottomColor: 'transparent' },
+  tabText: { fontSize: 15, fontWeight: '800' },
   list: { padding: 20, paddingBottom: 120 },
   logCard: { borderRadius: 20, marginBottom: 15, flexDirection: 'row', overflow: 'hidden', borderWidth: 2, borderColor: 'transparent', ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 }, android: { elevation: 2 } }) },
   statusLine: { width: 5 },

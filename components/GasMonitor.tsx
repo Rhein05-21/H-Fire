@@ -185,7 +185,7 @@ export default function GasDashboard() {
 
       <FlatList
         data={Object.values(devices)}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.mac}
         renderItem={renderDevice}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
@@ -329,5 +329,17 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 20, fontWeight: '900', marginBottom: 20 },
   modalInput: { padding: 15, borderRadius: 12, fontSize: 18, fontWeight: '700', marginBottom: 25 },
   modalActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  modalSave: { backgroundColor: '#2196F3', paddingHorizontal: 25, paddingVertical: 12, borderRadius: 12 }
+  modalSave: { backgroundColor: '#2196F3', paddingHorizontal: 25, paddingVertical: 12, borderRadius: 12 },
+  sectionTitle: { fontSize: 18, fontWeight: '900', paddingHorizontal: 25, marginTop: 10, marginBottom: 15 },
+  historySection: { paddingHorizontal: 20, paddingBottom: 50, marginTop: 20 },
+  historyHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 5 },
+  historyCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 20, borderWidth: 1, marginBottom: 12 },
+  historyIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  historyType: { fontSize: 14, fontWeight: '900' },
+  historyMeta: { fontSize: 12, fontWeight: '700', marginTop: 2 },
+  historyTime: { fontSize: 10, fontWeight: '600', marginTop: 4 },
+  historyStatus: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
+  historyStatusText: { fontSize: 9, fontWeight: '900' },
+  emptyHistory: { padding: 30, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginTop: 10 },
+  emptyHistoryText: { fontSize: 13, fontWeight: '700', marginTop: 10 }
 });
