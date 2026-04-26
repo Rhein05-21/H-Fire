@@ -2,6 +2,7 @@
   "expo": {
     "name": "Fire/Gas Leak Monitoring",
     "slug": "h-fireresidentmonitor",
+    "owner": "h-fireresident",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/H-Fire _logo.png",
@@ -12,6 +13,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.tigle.hfire",
       "adaptiveIcon": {
         "backgroundColor": "#121212",
         "foregroundImage": "./assets/images/H-Fire _logo.png",
@@ -47,7 +49,7 @@
       ]
     ],
     "updates": {
-      "url": "https://u.expo.dev/7e955f47-b77e-4f62-8949-51ad7e53911f"
+      "url": "https://u.expo.dev/94a8c506-8d0e-4097-b110-cccb6829fbbe"
     },
     "runtimeVersion": {
       "policy": "appVersion"
@@ -58,7 +60,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "7e955f47-b77e-4f62-8949-51ad7e53911f"
+        "projectId": "94a8c506-8d0e-4097-b110-cccb6829fbbe"
       },
       "clerkProxyUrl": "https://valued-vulture-7.clerk.accounts.dev"
     }
