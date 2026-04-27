@@ -216,7 +216,7 @@ function RootLayoutContent() {
       {splashVisible && (
         <Animated.View style={[styles.splashContainer, { backgroundColor, opacity: fadeAnim }]}>
           <Image 
-            source={require('@/assets/images/H-Fire _logo.png')} 
+            source={require('@/assets/images/h-fire_logo.png')} 
             style={styles.splashLogo}
             resizeMode="contain"
           />

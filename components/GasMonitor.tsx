@@ -218,7 +218,7 @@ export default function GasDashboard() {
             <View style={styles.onboardingHeader}>
               <View style={styles.logoCircle}>
                 <Image 
-                  source={require('@/assets/images/H-Fire _logo.png')} 
+                  source={require('@/assets/images/h-fire_logo.png')} 
                   style={{ width: 120, height: 120, borderRadius: 60 }}
                   resizeMode="contain"
                 />
