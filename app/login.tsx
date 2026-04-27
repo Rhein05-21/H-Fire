@@ -23,6 +23,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Alert,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 
@@ -57,7 +58,6 @@ export default function LoginScreen() {
   const labelColor = colorScheme === 'dark' ? 'rgba(255,255,255,0.6)' : '#444';
 
   const { signIn, setActive, isLoaded: signInLoaded } = useSignIn();
-  
   const { startOAuthFlow: startGoogleFlow } = useOAuth({ strategy: "oauth_google" });
 
   const [email, setEmail] = useState('');
@@ -71,10 +71,6 @@ export default function LoginScreen() {
   const [blockLot, setBlockLot] = useState(''); 
   const [address, setAddress] = useState('');
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-
-  const [firstNameError, setFirstNameError] = useState('');
-  const [lastNameError, setLastNameError] = useState('');
-  const [blockLotError, setBlockLotError] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -95,21 +91,11 @@ export default function LoginScreen() {
   const validateFirstName = (text: string) => {
     const cleaned = text.replace(/[0-9]/g, '');
     setFirstName(cleaned);
-    if (cleaned.trim().length < 2) setFirstNameError('First name too short');
-    else setFirstNameError('');
   };
 
   const validateLastName = (text: string) => {
     const cleaned = text.replace(/[0-9]/g, '');
     setLastName(cleaned);
-    if (cleaned.trim().length < 2) setLastNameError('Last name too short');
-    else setLastNameError('');
-  };
-
-  const validateBlockLot = (text: string) => {
-    setBlockLot(text);
-    if (text.trim().length === 0) setBlockLotError('Required');
-    else setBlockLotError('');
   };
 
   useEffect(() => {
@@ -147,28 +133,37 @@ export default function LoginScreen() {
     try {
       const result = await signIn.create({ identifier: email.trim().toLowerCase(), password });
       if (result.status === 'complete') await setActive({ session: result.createdSessionId });
-      else setError('Incomplete');
-    } catch (err: any) { setError('Login failed'); triggerShake(); }
+      else setError('Login incomplete.');
+    } catch (err: any) { setError(err.errors?.[0]?.message || 'Login failed'); triggerShake(); }
     finally { setLoading(false); }
   };
 
-  const handleSocialLogin = async (provider: 'google') => {
+  const handleSocialLogin = async () => {
     setLoading(true);
     try {
       const { createdSessionId, setActive: setOAuthActive } = await startGoogleFlow({ redirectUrl: Linking.createURL('/', { scheme: 'hfire' }) });
       if (createdSessionId && setOAuthActive) await setOAuthActive({ session: createdSessionId });
-    } catch (err: any) { setError('Login failed'); triggerShake(); }
+    } catch (err: any) { setError('Google login failed'); triggerShake(); }
     finally { setLoading(false); }
   };
 
   const handleCompleteProfile = async () => {
     if (profileStep === 1) { setProfileStep(2); return; }
+    if (!location) return Alert.alert('Location Required', 'Please select your house location on the map.');
     setLoading(true);
     try {
       const fullName = `${lastName.trim()}, ${firstName.trim()}${middleName ? ' ' + middleName.trim() : ''}`;
-      await updateProfile({ name: fullName, block_lot: blockLot.trim(), latitude: location?.latitude, longitude: location?.longitude, address: address.trim() });
+      const { error: updateErr } = await updateProfile({ 
+        name: fullName, 
+        block_lot: blockLot.trim(), 
+        latitude: location.latitude, 
+        longitude: location.longitude, 
+        address: address.trim() 
+      });
+      if (updateErr) throw updateErr;
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace('/(tabs)');
-    } catch (err: any) { setError('Failed'); triggerShake(); }
+    } catch (err: any) { setError('Failed to save profile'); triggerShake(); }
     finally { setLoading(false); }
   };
 
@@ -182,7 +177,11 @@ export default function LoginScreen() {
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-        <style>body { margin: 0; padding: 0; } #map { height: 100vh; width: 100vw; } .leaflet-control-attribution { display: none; }</style>
+        <style>
+          body { margin: 0; padding: 0; background: #eee; }
+          #map { height: 100vh; width: 100vw; }
+          .leaflet-control-attribution { display: none; }
+        </style>
       </head>
       <body>
         <div id="map"></div>
@@ -190,25 +189,40 @@ export default function LoginScreen() {
           var map = L.map('map', { zoomControl: false }).setView([${initialLat}, ${initialLng}], 16);
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
           var marker = L.marker([${initialLat}, ${initialLng}], { draggable: true }).addTo(map);
+          
           function updatePos(lat, lng) {
             window.ReactNativeWebView.postMessage(JSON.stringify({ latitude: lat, longitude: lng }));
           }
-          map.on('click', function(e) { marker.setLatLng(e.latlng); updatePos(e.latlng.lat, e.latlng.lng); });
-          marker.on('dragend', function(e) { updatePos(e.target.getLatLng().lat, e.target.getLatLng().lng); });
+
+          map.on('click', function(e) {
+            marker.setLatLng(e.latlng);
+            updatePos(e.latlng.lat, e.latlng.lng);
+          });
+
+          marker.on('dragend', function(e) {
+            updatePos(e.target.getLatLng().lat, e.target.getLatLng().lng);
+          });
+
           window.addEventListener('message', function(event) {
-            var data = JSON.parse(event.data);
-            if (data.type === 'FLY_TO') { marker.setLatLng([data.lat, data.lng]); map.flyTo([data.lat, data.lng], 17); }
+            try {
+              var data = JSON.parse(event.data);
+              if (data.type === 'FLY_TO') {
+                marker.setLatLng([data.lat, data.lng]);
+                map.flyTo([data.lat, data.lng], 18);
+              }
+            } catch(e) {}
           });
         </script>
       </body>
       </html>
     `;
-  }, [profileStep]);
+  }, [profileStep === 2]);
 
   const onMapMessage = (event: any) => {
     try {
       const coords = JSON.parse(event.nativeEvent.data);
       setLocation(coords);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       Location.reverseGeocodeAsync(coords).then(([rev]: any) => {
         if (rev) {
           const parts = [rev.name, rev.streetNumber, rev.street, rev.subregion, rev.district, rev.city, rev.region];
@@ -221,7 +235,7 @@ export default function LoginScreen() {
   const getCurrentLocation = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
+      if (status !== 'granted') return Alert.alert('Permission Denied', 'We need location access to find your home.');
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
       setLocation(coords);
@@ -247,43 +261,59 @@ export default function LoginScreen() {
         </View>
 
         <Text style={[styles.subtitle, { color: subtitleColor }]}>
-          {!isProfilePending ? 'Sign in to access dashboard' : `Step ${profileStep} of 2`}
+          {!isProfilePending ? 'Sign in to access your dashboard' : `Complete your profile - Step ${profileStep} of 2`}
         </Text>
 
         <Animated.View style={[styles.form, { transform: [{ translateX: shakeAnim }] }]}>
           {!isProfilePending ? (
             <>
-              <InputField label="Email Address" value={email} onChangeText={setEmail} {...sharedProps} />
-              <InputField label="Password" secureTextEntry value={password} onChangeText={setPassword} {...sharedProps} />
+              <InputField label="Email Address" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" {...sharedProps} />
+              <InputField label="Password" value={password} onChangeText={setPassword} secureTextEntry {...sharedProps} />
             </>
           ) : profileStep === 1 ? (
             <View style={{ gap: 15 }}>
               <InputField label="First Name" value={firstName} onChangeText={validateFirstName} {...sharedProps} />
-              <InputField label="Middle Name" value={middleName} onChangeText={setMiddleName} {...sharedProps} />
+              <InputField label="Middle Name (Optional)" value={middleName} onChangeText={setMiddleName} {...sharedProps} />
               <InputField label="Last Name" value={lastName} onChangeText={validateLastName} {...sharedProps} />
-              <InputField label="Block and Lot" value={blockLot} onChangeText={validateBlockLot} {...sharedProps} />
+              <InputField label="Block and Lot" value={blockLot} onChangeText={setBlockLot} placeholder="e.g. Block 1 Lot 2" {...sharedProps} />
             </View>
           ) : (
             <View style={{ gap: 10 }}>
-              <TouchableOpacity onPress={() => setProfileStep(1)} disabled={loading} style={styles.backBtn}><Text style={{ color: ACCENT }}>Back to Step 1</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setProfileStep(1)} disabled={loading} style={styles.backBtn}>
+                <Text style={{ color: ACCENT, fontWeight: '800' }}>← Back to Step 1</Text>
+              </TouchableOpacity>
               <InputField label="Detailed Household Address" value={address} onChangeText={setAddress} multiline {...sharedProps} />
               <View style={styles.mapContainer}>
-                <WebView ref={webViewRef} originWhitelist={['*']} source={{ html: mapHtml }} onMessage={onMapMessage} style={styles.map} />
-                <TouchableOpacity style={styles.locationBtn} onPress={getCurrentLocation}><Text style={{ color: '#fff' }}>Use Current Location</Text></TouchableOpacity>
+                <WebView 
+                  ref={webViewRef} 
+                  originWhitelist={['*']} 
+                  source={{ html: mapHtml }} 
+                  onMessage={onMapMessage} 
+                  style={styles.map} 
+                  scrollEnabled={false}
+                />
+                <TouchableOpacity style={styles.locationBtn} onPress={getCurrentLocation}>
+                  <FontAwesome name="location-arrow" size={14} color="#fff" />
+                  <Text style={{ color: '#fff', fontWeight: '800', marginLeft: 6 }}>Find Me</Text>
+                </TouchableOpacity>
               </View>
+              <Text style={{ fontSize: 11, color: subtitleColor, textAlign: 'center', marginTop: 5 }}>
+                Tap the map or drag the pin to your exact house.
+              </Text>
             </View>
           )}
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <TouchableOpacity style={[styles.authBtn, !isStepValid && { opacity: 0.6 }]} onPress={() => { if (isProfilePending) handleCompleteProfile(); else handlePasswordLogin(); }} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.authBtnText}>{isProfilePending ? (profileStep === 1 ? 'CONTINUE' : 'FINISH') : 'SIGN IN'}</Text>}
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.authBtnText}>{isProfilePending ? (profileStep === 1 ? 'CONTINUE' : 'FINISH SETUP') : 'SIGN IN'}</Text>}
           </TouchableOpacity>
 
           {!isProfilePending && (
-            <View style={styles.socialRow}>
-              <TouchableOpacity style={styles.socialBtn} onPress={() => handleSocialLogin('google')}><FontAwesome name="google" size={24} color={textColor} /><Text style={{ color: textColor }}>Google</Text></TouchableOpacity>
-            </View>
+            <TouchableOpacity style={styles.socialBtn} onPress={handleSocialLogin}>
+              <FontAwesome name="google" size={20} color={textColor} />
+              <Text style={[styles.socialText, { color: textColor }]}>Continue with Google</Text>
+            </TouchableOpacity>
           )}
         </Animated.View>
       </ScrollView>
@@ -293,23 +323,23 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  scroll: { flexGrow: 1, justifyContent: 'center', padding: 20 },
+  scroll: { flexGrow: 1, justifyContent: 'center', padding: 25 },
   brandRow: { alignItems: 'center', marginBottom: 20 },
   logoImage: { width: 100, height: 100 },
   brandTitle: { fontSize: 32, fontWeight: '900', letterSpacing: 8 },
   brandSub: { color: ACCENT, fontSize: 12, fontWeight: '900', letterSpacing: 4 },
-  subtitle: { fontSize: 14, textAlign: 'center', marginBottom: 30 },
+  subtitle: { fontSize: 14, textAlign: 'center', marginBottom: 30, lineHeight: 20 },
   form: { gap: 15 },
   inputContainer: { gap: 6 },
-  label: { fontSize: 12, fontWeight: '800' },
-  input: { borderRadius: 16, padding: 18, borderWidth: 1 },
-  authBtn: { backgroundColor: ACCENT, borderRadius: 16, padding: 20, alignItems: 'center' },
-  authBtnText: { color: '#fff', fontSize: 16, fontWeight: '900' },
-  socialRow: { marginTop: 10 },
-  socialBtn: { flexDirection: 'row', borderRadius: 16, padding: 15, alignItems: 'center', justifyContent: 'center', gap: 10, borderWidth: 1 },
-  errorText: { color: '#FF3B30', textAlign: 'center' },
-  mapContainer: { height: 350, borderRadius: 20, overflow: 'hidden' },
+  label: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  input: { borderRadius: 16, padding: 18, fontSize: 16, borderWidth: 1 },
+  authBtn: { backgroundColor: ACCENT, borderRadius: 18, padding: 20, alignItems: 'center', marginTop: 10 },
+  authBtnText: { color: '#fff', fontSize: 15, fontWeight: '900', letterSpacing: 1 },
+  socialBtn: { flexDirection: 'row', borderRadius: 18, padding: 18, alignItems: 'center', justifyContent: 'center', gap: 12, borderWidth: 1, borderColor: 'rgba(128,128,128,0.2)', marginTop: 10 },
+  socialText: { fontSize: 14, fontWeight: '700' },
+  errorText: { color: '#FF3B30', textAlign: 'center', fontWeight: '700' },
+  mapContainer: { height: 350, borderRadius: 24, overflow: 'hidden', backgroundColor: '#eee', borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' },
   map: { flex: 1 },
-  locationBtn: { position: 'absolute', bottom: 10, alignSelf: 'center', backgroundColor: ACCENT, padding: 10, borderRadius: 20 },
-  backBtn: { marginBottom: 10 }
+  locationBtn: { position: 'absolute', bottom: 15, right: 15, backgroundColor: ACCENT, paddingHorizontal: 15, paddingVertical: 10, borderRadius: 15, flexDirection: 'row', alignItems: 'center', elevation: 5 },
+  backBtn: { marginBottom: 15, paddingVertical: 5 }
 });
