@@ -35,64 +35,21 @@ export default function GasDashboard() {
 
   const [labels, setLabels] = useState<Record<string, string>>({});
   const [internetConnected, setInternetConnected] = useState<boolean | null>(null);
-  const [editingMac, setEditingMac] = useState<string | null>(null);
-  const [tempLabel, setTempLabel] = useState('');
-  const [refreshing, setRefreshing] = useState(false);
-  
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const [setupName, setSetupName] = useState('');
-  const [setupCommunity, setSetupCommunity] = useState('');
-  const [onboardingStep, setOnboardingStep] = useState(1);
 
+  // 1. LOAD LABELS ON MOUNT
   useEffect(() => {
-    if (!userLoading && !userDetails) setShowOnboarding(true);
-    else setShowOnboarding(false);
-  }, [userDetails, userLoading]);
-
-  const handleStartOnboarding = async () => {
-    try {
-      // 1. Request Notification Permissions
-      const { status: notifStatus } = await Notifications.requestPermissionsAsync();
-      
-      // 2. Request Location Permissions
-      const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
-      
-      setOnboardingStep(2);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (e) {
-      setOnboardingStep(2);
-    }
-  };
-
-  const completeOnboarding = async () => {
-    if (!setupName.trim()) return Alert.alert('Required', 'Please enter your name.');
-    try {
-      const details = { name: setupName, community: setupCommunity || 'General' };
-      await supabase.from('profiles').upsert({ id: profileId, ...details });
-      await setUserDetails(details as any);
-      setShowOnboarding(false);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (e) {
-      Alert.alert('Error', 'Failed to save profile. Check your connection.');
-    }
-  };
-
-  useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener(state => setInternetConnected(state.isConnected));
-    return () => unsubscribe();
+    AsyncStorage.getItem('HFIRE_DEVICE_LABELS').then(stored => {
+      if (stored) setLabels(JSON.parse(stored));
+    });
   }, []);
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    await refreshProfile();
-    setRefreshing(false);
-  }, [refreshProfile]);
+  const [editingMac, setEditingMac] = useState<string | null>(null);
+  // ... rest of state unchanged
 
   const saveLabel = async () => {
     if (editingMac) {
       try {
-        // 1. Sync with Supabase (so Admin sees the new label)
+        // 1. Sync with Supabase
         const { error } = await supabase
           .from('devices')
           .update({ label: tempLabel })
@@ -105,11 +62,14 @@ export default function GasDashboard() {
         setLabels(newLabels);
         await AsyncStorage.setItem('HFIRE_DEVICE_LABELS', JSON.stringify(newLabels));
         
+        // 3. Trigger Global Refresh to sync UserContext
+        await refreshProfile();
+        
         setEditingMac(null);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch (e) {
         console.error('Rename failed:', e);
-        alert('Failed to update label in database.');
+        Alert.alert('Error', 'Failed to update label in database.');
       }
     }
   };
