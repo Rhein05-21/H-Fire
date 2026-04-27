@@ -32,23 +32,22 @@ const ACCENT = '#2196F3';
 
 WebBrowser.maybeCompleteAuthSession();
 
-const InputField = ({ label, inputBg, textColor, colorScheme, placeholderColor, labelColor, ...props }: any) => (
+const InputField = ({ label, inputBg, textColor, colorScheme, placeholderColor, labelColor, error, ...props }: any) => (
   <View style={styles.inputContainer}>
     <Text style={[styles.label, { color: labelColor }]}>{label}</Text>
     <TextInput
-      style={[styles.input, { backgroundColor: inputBg, color: textColor, borderColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}
+      style={[styles.input, { backgroundColor: inputBg, color: textColor, borderColor: error ? '#FF3B30' : (colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)') }]}
       placeholderTextColor={placeholderColor}
       {...props}
     />
+    {error ? <Text style={styles.inlineError}>{error}</Text> : null}
   </View>
 );
 
 export default function LoginScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
-  const { 
-    isAuthenticated, userDetails, updateProfile, loading: contextLoading 
-  } = useUser();
+  const { isAuthenticated, userDetails, updateProfile, loading: contextLoading } = useUser();
 
   const backgroundColor = useThemeColor({}, 'background');
   const textColor = useThemeColor({}, 'text');
@@ -72,6 +71,10 @@ export default function LoginScreen() {
   const [address, setAddress] = useState('');
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
+  const [firstNameError, setFirstNameError] = useState('');
+  const [lastNameError, setLastNameError] = useState('');
+  const [blockLotError, setBlockLotError] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isStepValid, setIsStepValid] = useState(false);
@@ -80,43 +83,49 @@ export default function LoginScreen() {
 
   useEffect(() => {
     if (isAuthenticated && !contextLoading) {
-      if (userDetails && userDetails.name && userDetails.block_lot) {
-        router.replace('/(tabs)');
-      } else {
-        setIsProfilePending(true);
-      }
+      if (userDetails && userDetails.name && userDetails.block_lot) router.replace('/(tabs)');
+      else setIsProfilePending(true);
     }
   }, [isAuthenticated, userDetails, contextLoading]);
 
   const validateFirstName = (text: string) => {
     const cleaned = text.replace(/[0-9]/g, '');
     setFirstName(cleaned);
+    if (cleaned.trim().length < 2) setFirstNameError('At least 2 characters');
+    else setFirstNameError('');
   };
 
   const validateLastName = (text: string) => {
     const cleaned = text.replace(/[0-9]/g, '');
     setLastName(cleaned);
+    if (cleaned.trim().length < 2) setLastNameError('At least 2 characters');
+    else setLastNameError('');
+  };
+
+  const validateBlockLot = (text: string) => {
+    setBlockLot(text);
+    if (text.trim().length === 0) setBlockLotError('Required');
+    else setBlockLotError('');
   };
 
   useEffect(() => {
     const validate = () => {
       if (!isProfilePending) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) return 'Invalid email';
-        if (password.length < 1) return 'Password required';
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Email error';
+        if (password.length < 1) return 'Pass error';
       } else {
         if (profileStep === 1) {
-          if (!firstName.trim() || firstName.trim().length < 2) return 'First Name error';
-          if (!lastName.trim() || lastName.trim().length < 2) return 'Last Name error';
-          if (!blockLot.trim()) return 'Block & Lot error';
+          if (!firstName.trim() || firstName.trim().length < 2 || firstNameError) return 'FN error';
+          if (!lastName.trim() || lastName.trim().length < 2 || lastNameError) return 'LN error';
+          if (!blockLot.trim() || blockLotError) return 'BL error';
         } else if (profileStep === 2) {
-          if (!location) return 'Location required';
+          if (!location) return 'Loc error';
         }
       }
       return '';
     };
     setIsStepValid(validate() === '');
-  }, [email, password, firstName, lastName, blockLot, location, isProfilePending, profileStep]);
+  }, [email, password, firstName, lastName, blockLot, location, isProfilePending, profileStep, firstNameError, lastNameError, blockLotError]);
 
   const triggerShake = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -128,13 +137,13 @@ export default function LoginScreen() {
   };
 
   const handlePasswordLogin = async () => {
-    if (!signInLoaded || !isStepValid) { triggerShake(); return; }
+    if (!signInLoaded || !isStepValid) return triggerShake();
     setLoading(true);
     try {
       const result = await signIn.create({ identifier: email.trim().toLowerCase(), password });
       if (result.status === 'complete') await setActive({ session: result.createdSessionId });
       else setError('Login incomplete.');
-    } catch (err: any) { setError(err.errors?.[0]?.message || 'Login failed'); triggerShake(); }
+    } catch (err: any) { setError('Invalid email or password'); triggerShake(); }
     finally { setLoading(false); }
   };
 
@@ -148,18 +157,16 @@ export default function LoginScreen() {
   };
 
   const handleCompleteProfile = async () => {
-    if (profileStep === 1) { setProfileStep(2); return; }
-    if (!location) return Alert.alert('Location Required', 'Please select your house location on the map.');
+    if (profileStep === 1) { 
+      if (firstNameError || lastNameError || blockLotError) return triggerShake();
+      setProfileStep(2); 
+      return; 
+    }
+    if (!location) return Alert.alert('Location Required', 'Select your house location.');
     setLoading(true);
     try {
       const fullName = `${lastName.trim()}, ${firstName.trim()}${middleName ? ' ' + middleName.trim() : ''}`;
-      const { error: updateErr } = await updateProfile({ 
-        name: fullName, 
-        block_lot: blockLot.trim(), 
-        latitude: location.latitude, 
-        longitude: location.longitude, 
-        address: address.trim() 
-      });
+      const { error: updateErr } = await updateProfile({ name: fullName, block_lot: blockLot.trim(), latitude: location.latitude, longitude: location.longitude, address: address.trim() });
       if (updateErr) throw updateErr;
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace('/(tabs)');
@@ -177,11 +184,7 @@ export default function LoginScreen() {
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-        <style>
-          body { margin: 0; padding: 0; background: #eee; }
-          #map { height: 100vh; width: 100vw; }
-          .leaflet-control-attribution { display: none; }
-        </style>
+        <style>body { margin: 0; padding: 0; background: #eee; } #map { height: 100vh; width: 100vw; } .leaflet-control-attribution { display: none; }</style>
       </head>
       <body>
         <div id="map"></div>
@@ -189,27 +192,13 @@ export default function LoginScreen() {
           var map = L.map('map', { zoomControl: false }).setView([${initialLat}, ${initialLng}], 16);
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
           var marker = L.marker([${initialLat}, ${initialLng}], { draggable: true }).addTo(map);
-          
-          function updatePos(lat, lng) {
-            window.ReactNativeWebView.postMessage(JSON.stringify({ latitude: lat, longitude: lng }));
-          }
-
-          map.on('click', function(e) {
-            marker.setLatLng(e.latlng);
-            updatePos(e.latlng.lat, e.latlng.lng);
-          });
-
-          marker.on('dragend', function(e) {
-            updatePos(e.target.getLatLng().lat, e.target.getLatLng().lng);
-          });
-
+          function updatePos(lat, lng) { window.ReactNativeWebView.postMessage(JSON.stringify({ latitude: lat, longitude: lng })); }
+          map.on('click', function(e) { marker.setLatLng(e.latlng); updatePos(e.latlng.lat, e.latlng.lng); });
+          marker.on('dragend', function(e) { updatePos(e.target.getLatLng().lat, e.target.getLatLng().lng); });
           window.addEventListener('message', function(event) {
             try {
               var data = JSON.parse(event.data);
-              if (data.type === 'FLY_TO') {
-                marker.setLatLng([data.lat, data.lng]);
-                map.flyTo([data.lat, data.lng], 18);
-              }
+              if (data.type === 'FLY_TO') { marker.setLatLng([data.lat, data.lng]); map.flyTo([data.lat, data.lng], 18); }
             } catch(e) {}
           });
         </script>
@@ -235,7 +224,7 @@ export default function LoginScreen() {
   const getCurrentLocation = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return Alert.alert('Permission Denied', 'We need location access to find your home.');
+      if (status !== 'granted') return Alert.alert('Permission Denied', 'GPS required.');
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
       setLocation(coords);
@@ -272,10 +261,10 @@ export default function LoginScreen() {
             </>
           ) : profileStep === 1 ? (
             <View style={{ gap: 15 }}>
-              <InputField label="First Name" value={firstName} onChangeText={validateFirstName} {...sharedProps} />
+              <InputField label="First Name" value={firstName} onChangeText={validateFirstName} error={firstNameError} {...sharedProps} />
               <InputField label="Middle Name (Optional)" value={middleName} onChangeText={setMiddleName} {...sharedProps} />
-              <InputField label="Last Name" value={lastName} onChangeText={validateLastName} {...sharedProps} />
-              <InputField label="Block and Lot" value={blockLot} onChangeText={setBlockLot} placeholder="e.g. Block 1 Lot 2" {...sharedProps} />
+              <InputField label="Last Name" value={lastName} onChangeText={validateLastName} error={lastNameError} {...sharedProps} />
+              <InputField label="Block and Lot" value={blockLot} onChangeText={validateBlockLot} error={blockLotError} placeholder="e.g. Block 1 Lot 2" {...sharedProps} />
             </View>
           ) : (
             <View style={{ gap: 10 }}>
@@ -284,22 +273,13 @@ export default function LoginScreen() {
               </TouchableOpacity>
               <InputField label="Detailed Household Address" value={address} onChangeText={setAddress} multiline {...sharedProps} />
               <View style={styles.mapContainer}>
-                <WebView 
-                  ref={webViewRef} 
-                  originWhitelist={['*']} 
-                  source={{ html: mapHtml }} 
-                  onMessage={onMapMessage} 
-                  style={styles.map} 
-                  scrollEnabled={false}
-                />
+                <WebView ref={webViewRef} originWhitelist={['*']} source={{ html: mapHtml }} onMessage={onMapMessage} style={styles.map} scrollEnabled={false} />
                 <TouchableOpacity style={styles.locationBtn} onPress={getCurrentLocation}>
                   <FontAwesome name="location-arrow" size={14} color="#fff" />
                   <Text style={{ color: '#fff', fontWeight: '800', marginLeft: 6 }}>Find Me</Text>
                 </TouchableOpacity>
               </View>
-              <Text style={{ fontSize: 11, color: subtitleColor, textAlign: 'center', marginTop: 5 }}>
-                Tap the map or drag the pin to your exact house.
-              </Text>
+              <Text style={{ fontSize: 11, color: subtitleColor, textAlign: 'center', marginTop: 5 }}>Tap map or drag pin to your exact house.</Text>
             </View>
           )}
 
@@ -310,10 +290,30 @@ export default function LoginScreen() {
           </TouchableOpacity>
 
           {!isProfilePending && (
-            <TouchableOpacity style={styles.socialBtn} onPress={handleSocialLogin}>
-              <FontAwesome name="google" size={20} color={textColor} />
-              <Text style={[styles.socialText, { color: textColor }]}>Continue with Google</Text>
-            </TouchableOpacity>
+            <>
+              <View style={styles.orRow}>
+                <View style={styles.orLine} />
+                <Text style={[styles.orText, { color: subtitleColor }]}>OR</Text>
+                <View style={styles.orLine} />
+              </View>
+
+              <TouchableOpacity style={styles.socialBtn} onPress={handleSocialLogin}>
+                <FontAwesome name="google" size={20} color={textColor} />
+                <Text style={[styles.socialText, { color: textColor }]}>Continue with Google</Text>
+              </TouchableOpacity>
+
+              <View style={styles.linksRow}>
+                <TouchableOpacity onPress={() => router.push('/forgot-password')}>
+                  <Text style={[styles.linkText, { color: subtitleColor }]}>Forgot Password?</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity style={styles.signupToggle} onPress={() => router.push('/signup')}>
+                <Text style={[styles.toggleBtnText, { color: subtitleColor }]}>
+                  Don't have an account? <Text style={{ color: ACCENT, fontWeight: '800' }}>Sign Up</Text>
+                </Text>
+              </TouchableOpacity>
+            </>
           )}
         </Animated.View>
       </ScrollView>
@@ -335,9 +335,17 @@ const styles = StyleSheet.create({
   input: { borderRadius: 16, padding: 18, fontSize: 16, borderWidth: 1 },
   authBtn: { backgroundColor: ACCENT, borderRadius: 18, padding: 20, alignItems: 'center', marginTop: 10 },
   authBtnText: { color: '#fff', fontSize: 15, fontWeight: '900', letterSpacing: 1 },
-  socialBtn: { flexDirection: 'row', borderRadius: 18, padding: 18, alignItems: 'center', justifyContent: 'center', gap: 12, borderWidth: 1, borderColor: 'rgba(128,128,128,0.2)', marginTop: 10 },
+  orRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 10, paddingHorizontal: 10 },
+  orLine: { flex: 1, height: 1, backgroundColor: 'rgba(128,128,128,0.1)' },
+  orText: { marginHorizontal: 15, fontSize: 12, fontWeight: '800', letterSpacing: 1 },
+  socialBtn: { flexDirection: 'row', borderRadius: 18, padding: 18, alignItems: 'center', justifyContent: 'center', gap: 12, borderWidth: 1, borderColor: 'rgba(128,128,128,0.2)' },
   socialText: { fontSize: 14, fontWeight: '700' },
+  linksRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 10 },
+  linkText: { fontSize: 13, fontWeight: '600' },
+  signupToggle: { marginTop: 20, alignItems: 'center' },
+  toggleBtnText: { fontSize: 14, fontWeight: '600' },
   errorText: { color: '#FF3B30', textAlign: 'center', fontWeight: '700' },
+  inlineError: { color: '#FF3B30', fontSize: 10, fontWeight: '700', marginLeft: 5 },
   mapContainer: { height: 350, borderRadius: 24, overflow: 'hidden', backgroundColor: '#eee', borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' },
   map: { flex: 1 },
   locationBtn: { position: 'absolute', bottom: 15, right: 15, backgroundColor: ACCENT, paddingHorizontal: 15, paddingVertical: 10, borderRadius: 15, flexDirection: 'row', alignItems: 'center', elevation: 5 },
