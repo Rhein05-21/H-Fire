@@ -212,10 +212,20 @@ export default function LoginScreen() {
       const coords = JSON.parse(event.nativeEvent.data);
       setLocation(coords);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      // Automatic Address Update on Pin
       Location.reverseGeocodeAsync(coords).then(([rev]: any) => {
         if (rev) {
-          const parts = [rev.name, rev.streetNumber, rev.street, rev.subregion, rev.district, rev.city, rev.region];
-          setAddress(parts.filter(Boolean).join(', '));
+          const parts = [
+            rev.name, 
+            rev.streetNumber, 
+            rev.street, 
+            rev.district, 
+            rev.city, 
+            rev.region
+          ];
+          const newAddr = parts.filter(Boolean).join(', ');
+          if (newAddr) setAddress(newAddr);
         }
       });
     } catch (e) {}
@@ -262,7 +272,7 @@ export default function LoginScreen() {
           ) : profileStep === 1 ? (
             <View style={{ gap: 15 }}>
               <InputField label="First Name" value={firstName} onChangeText={validateFirstName} error={firstNameError} {...sharedProps} />
-              <InputField label="Middle Name (Optional)" value={middleName} onChangeText={setMiddleName} {...sharedProps} />
+              <InputField label="Middle Name or Initial" value={middleName} onChangeText={setMiddleName} {...sharedProps} />
               <InputField label="Last Name" value={lastName} onChangeText={validateLastName} error={lastNameError} {...sharedProps} />
               <InputField label="Block and Lot" value={blockLot} onChangeText={validateBlockLot} error={blockLotError} placeholder="e.g. Block 1 Lot 2" {...sharedProps} />
             </View>

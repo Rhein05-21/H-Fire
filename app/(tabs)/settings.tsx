@@ -163,7 +163,11 @@ export default function SettingsScreen() {
 
   const handleSave = () => {
     if (!firstName.trim() || !lastName.trim() || !blockLot.trim()) return Alert.alert('Error', 'Required fields missing.');
-    if (!hasChanges) return setShowNoChangesModal(true);
+    if (firstNameError || lastNameError) return Alert.alert('Error', 'Please fix name errors.');
+    if (!hasChanges) {
+      setShowNoChangesModal(true);
+      return;
+    }
     setShowSaveModal(true);
   };
 
@@ -188,15 +192,8 @@ export default function SettingsScreen() {
   };
 
   const constructAddress = (rev: any) => {
-    const parts = [];
-    if (rev.name && rev.name !== rev.street) parts.push(rev.name);
-    if (rev.streetNumber) parts.push(rev.streetNumber);
-    if (rev.street) parts.push(rev.street);
-    if (rev.subregion) parts.push(rev.subregion);
-    if (rev.district) parts.push(rev.district);
-    if (rev.city) parts.push(rev.city);
-    if (rev.region) parts.push(rev.region);
-    return parts.filter(Boolean).join(', ');
+    const parts = [rev.name, rev.streetNumber, rev.street, rev.district, rev.city, rev.subregion, rev.region, rev.postalCode];
+    return parts.filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', ');
   };
 
   const mapHtml = useMemo(() => {
@@ -209,27 +206,22 @@ export default function SettingsScreen() {
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-        <style>
-          body { margin: 0; padding: 0; }
-          #map { height: 100vh; width: 100vw; }
-          .leaflet-control-attribution { display: none; }
-        </style>
+        <style>body { margin: 0; padding: 0; background: #eee; } #map { height: 100vh; width: 100vw; } .leaflet-control-attribution { display: none; }</style>
       </head>
       <body>
         <div id="map"></div>
         <script>
-          var map = L.map('map').setView([${initialLat}, ${initialLng}], 16);
+          var map = L.map('map', { zoomControl: false }).setView([${initialLat}, ${initialLng}], 16);
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
           var marker = L.marker([${initialLat}, ${initialLng}], { draggable: true }).addTo(map);
-          function updatePos(lat, lng) {
-            window.ReactNativeWebView.postMessage(JSON.stringify({ latitude: lat, longitude: lng }));
-          }
-          map.on('click', function(e) {
-            marker.setLatLng(e.latlng);
-            updatePos(e.latlng.lat, e.latlng.lng);
-          });
-          marker.on('dragend', function(e) {
-            updatePos(e.target.getLatLng().lat, e.target.getLatLng().lng);
+          function updatePos(lat, lng) { window.ReactNativeWebView.postMessage(JSON.stringify({ latitude: lat, longitude: lng })); }
+          map.on('click', function(e) { marker.setLatLng(e.latlng); updatePos(e.latlng.lat, e.latlng.lng); });
+          marker.on('dragend', function(e) { updatePos(e.target.getLatLng().lat, e.target.getLatLng().lng); });
+          window.addEventListener('message', function(event) {
+            try {
+              var data = JSON.parse(event.data);
+              if (data.type === 'FLY_TO') { marker.setLatLng([data.lat, data.lng]); map.flyTo([data.lat, data.lng], 18); }
+            } catch(e) {}
           });
         </script>
       </body>
@@ -237,13 +229,16 @@ export default function SettingsScreen() {
     `;
   }, [showMap, location]);
 
-  const onMapMessage = (event: any) => {
+  const onMapMessage = async (event: any) => {
     try {
-      const coords = JSON.parse(event.nativeEvent.data);
+      const data = JSON.parse(event.nativeEvent.data);
+      const coords = { latitude: data.latitude, longitude: data.longitude };
       setLocation(coords);
-      Location.reverseGeocodeAsync(coords).then(([rev]: any) => {
-        if (rev) setAddress(constructAddress(rev));
-      });
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const result = await Location.reverseGeocodeAsync(coords);
+      if (result && result.length > 0) {
+        setAddress(constructAddress(result[0]));
+      }
     } catch (e) {}
   };
 
@@ -251,12 +246,12 @@ export default function SettingsScreen() {
     setLoadingGps(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
+      if (status !== 'granted') return Alert.alert('Permission Denied', 'GPS required.');
       const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       const coords = { latitude: current.coords.latitude, longitude: current.coords.longitude };
       setLocation(coords);
-      const [rev] = await Location.reverseGeocodeAsync(coords);
-      if (rev) setAddress(constructAddress(rev));
+      const result = await Location.reverseGeocodeAsync(coords);
+      if (result && result.length > 0) setAddress(constructAddress(result[0]));
     } catch (e) {}
     finally { setLoadingGps(false); }
   };
@@ -293,7 +288,7 @@ export default function SettingsScreen() {
         {showAdminTab && <TabButton title="Security" tab="ADMIN" />}
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {activeTab === 'PROFILE' && (
           <View>
             <View style={[styles.section, { backgroundColor: cardBg }]}>
@@ -301,11 +296,35 @@ export default function SettingsScreen() {
               <View style={styles.inputGroup}>
                 <View>
                   <Text style={styles.fieldLabel}>FIRST NAME</Text>
-                  <TextInput style={[styles.input, { backgroundColor: inputBg, color: textColor }]} value={firstName} onChangeText={validateFirstName} placeholder="Enter first name" placeholderTextColor={placeholderColor} />
+                  <TextInput 
+                    style={[styles.input, { backgroundColor: inputBg, color: textColor }, firstNameError ? styles.inputError : null]} 
+                    value={firstName} 
+                    onChangeText={validateFirstName} 
+                    placeholder="First Name" 
+                    placeholderTextColor={placeholderColor} 
+                  />
+                  {firstNameError ? <Text style={styles.errorText}>{firstNameError}</Text> : null}
+                </View>
+                <View>
+                  <Text style={styles.fieldLabel}>MIDDLE NAME OR INITIAL</Text>
+                  <TextInput 
+                    style={[styles.input, { backgroundColor: inputBg, color: textColor }]} 
+                    value={middleName} 
+                    onChangeText={setMiddleName} 
+                    placeholder="Middle Name or Initial" 
+                    placeholderTextColor={placeholderColor} 
+                  />
                 </View>
                 <View>
                   <Text style={styles.fieldLabel}>LAST NAME</Text>
-                  <TextInput style={[styles.input, { backgroundColor: inputBg, color: textColor }]} value={lastName} onChangeText={validateLastName} placeholder="Enter last name" placeholderTextColor={placeholderColor} />
+                  <TextInput 
+                    style={[styles.input, { backgroundColor: inputBg, color: textColor }, lastNameError ? styles.inputError : null]} 
+                    value={lastName} 
+                    onChangeText={validateLastName} 
+                    placeholder="Last Name" 
+                    placeholderTextColor={placeholderColor} 
+                  />
+                  {lastNameError ? <Text style={styles.errorText}>{lastNameError}</Text> : null}
                 </View>
                 <View>
                   <Text style={styles.fieldLabel}>COMMUNITY / BLOCK & LOT</Text>
@@ -332,7 +351,7 @@ export default function SettingsScreen() {
                 <IconSymbol name="chevron.right" size={14} color={secondaryText} />
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
+              <TouchableOpacity style={[styles.saveBtn, (!hasChanges || firstNameError !== '' || lastNameError !== '') && { opacity: 0.6 }]} onPress={handleSave} disabled={saving}>
                 {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save Changes</Text>}
               </TouchableOpacity>
             </View>
@@ -366,6 +385,23 @@ export default function SettingsScreen() {
                 </View>
               )) : <Text style={{ color: secondaryText, textAlign: 'center' }}>No devices linked.</Text>}
             </View>
+            <View style={[styles.section, { backgroundColor: cardBg }]}>
+              <Text style={styles.sectionLabel}>DEVICE DISCOVERY</Text>
+              <TouchableOpacity style={[styles.scanBtn, { borderColor: '#2196F3' }]} onPress={scanForDevices} disabled={isScanning}>
+                {isScanning ? <ActivityIndicator color="#2196F3" /> : <><IconSymbol name="magnifyingglass" size={18} color="#2196F3" /><Text style={styles.scanBtnText}>Scan for New Device</Text></>}
+              </TouchableOpacity>
+              {availableDevices.length > 0 && (
+                <View style={{ marginTop: 20 }}>
+                  <Text style={styles.foundTitle}>Available Devices Nearby:</Text>
+                  {availableDevices.map(dev => (
+                    <TouchableOpacity key={dev.mac} style={[styles.foundItem, { backgroundColor: inputBg }]} onPress={() => linkDevice(dev.mac)}>
+                      <View style={{ flex: 1 }}><Text style={[styles.foundMac, { color: textColor }]}>{dev.mac}</Text><Text style={styles.foundHouse}>Topic: {dev.house_name}</Text></View>
+                      <IconSymbol name="plus.circle.fill" size={24} color="#34C759" />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
           </View>
         )}
       </ScrollView>
@@ -378,19 +414,12 @@ export default function SettingsScreen() {
               <IconSymbol name="chevron.left" size={18} color="#fff" />
               <Text style={styles.mapBackText}>Back</Text>
             </TouchableOpacity>
-
             <WebView originWhitelist={['*']} source={{ html: mapHtml }} onMessage={onMapMessage} style={styles.map} />
-
             <View style={styles.mapOverlay}>
               <Text style={styles.mapInstruction}>📍 Tap map or drag pin to your home</Text>
               <View style={styles.mapBtnRow}>
-                <TouchableOpacity style={styles.mapLocateBtn} onPress={flyToMyLocation}>
-                  <IconSymbol name="location.fill" size={16} color="#2196F3" />
-                  <Text style={styles.mapLocateBtnText}>My Location</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.mapConfirmBtn} onPress={() => setShowMap(false)}>
-                  <Text style={styles.mapConfirmText}>Confirm</Text>
-                </TouchableOpacity>
+                <TouchableOpacity style={styles.mapLocateBtn} onPress={flyToMyLocation}><IconSymbol name="location.fill" size={16} color="#2196F3" /><Text style={styles.mapLocateBtnText}>My Location</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.mapConfirmBtn} onPress={() => { if (location) setShowMap(false); }}><Text style={styles.mapConfirmText}>Confirm</Text></TouchableOpacity>
               </View>
             </View>
           </View>
@@ -398,23 +427,11 @@ export default function SettingsScreen() {
       </Modal>
 
       {/* SUPPORTING MODALS */}
-      <Modal visible={showPinModal} animationType="fade" transparent>
-        <View style={styles.pinOverlay}>
-          <View style={[styles.pinCard, { backgroundColor: cardBg }]}>
-            <Text style={[styles.pinTitle, { color: textColor }]}>Security PIN</Text>
-            <TextInput style={[styles.pinInput, { backgroundColor: inputBg, color: textColor }]} value={pinInput} onChangeText={setPinInput} keyboardType="number-pad" maxLength={4} secureTextEntry autoFocus />
-            <View style={styles.pinActions}>
-              <TouchableOpacity onPress={() => setShowPinModal(false)}><Text style={{ color: secondaryText }}>Cancel</Text></TouchableOpacity>
-              <TouchableOpacity onPress={verifyPin} style={styles.pinVerify}><Text style={{ color: '#fff' }}>Verify</Text></TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
       <Modal visible={showSignOutModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: cardBg }]}>
             <Text style={[styles.modalTitle, { color: textColor }]}>Sign Out</Text>
+            <Text style={[styles.modalMessage, { color: secondaryText }]}>Are you sure you want to sign out?</Text>
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.modalBtn} onPress={() => setShowSignOutModal(false)}><Text style={{ color: textColor }}>Cancel</Text></TouchableOpacity>
               <TouchableOpacity style={[styles.modalBtn, { backgroundColor: '#FF3B30' }]} onPress={confirmSignOut}><Text style={{ color: '#fff' }}>Sign Out</Text></TouchableOpacity>
@@ -439,7 +456,10 @@ export default function SettingsScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: cardBg }]}>
             <Text style={[styles.modalTitle, { color: textColor }]}>No Changes</Text>
-            <TouchableOpacity style={styles.modalBtn} onPress={() => setShowNoChangesModal(false)}><Text style={{ color: textColor }}>OK</Text></TouchableOpacity>
+            <Text style={[styles.modalMessage, { color: secondaryText }]}>Modify a field before saving.</Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: '#2196F3' }]} onPress={() => setShowNoChangesModal(false)}><Text style={{ color: '#fff' }}>Understood</Text></TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -463,7 +483,7 @@ const styles = StyleSheet.create({
   inputGroup: { gap: 15, marginBottom: 15 },
   input: { borderRadius: 14, padding: 16, fontSize: 16, fontWeight: '600' },
   inputError: { borderWidth: 1, borderColor: '#FF3B30' },
-  errorText: { color: '#FF3B30', fontSize: 11, fontWeight: '700' },
+  errorText: { color: '#FF3B30', fontSize: 11, fontWeight: '700', marginTop: 4, marginLeft: 4 },
   locBtn: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 14 },
   locBtnText: { marginLeft: 10, fontWeight: '700', fontSize: 15 },
   saveBtn: { backgroundColor: '#2196F3', padding: 18, borderRadius: 16, alignItems: 'center', marginTop: 20 },
