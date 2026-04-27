@@ -1,4 +1,3 @@
-import MapView, { Marker, PROVIDER_GOOGLE } from '@/components/Map';
 import { useUser } from '@/context/UserContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -10,7 +9,7 @@ import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as WebBrowser from 'expo-web-browser';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -25,6 +24,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 
 const { width } = Dimensions.get('window');
 const ACCENT = '#2196F3';
@@ -63,7 +63,6 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   
-  // Profile Completion State (for first-time social login)
   const [isProfilePending, setIsProfilePending] = useState(false);
   const [profileStep, setProfileStep] = useState(1);
   const [firstName, setFirstName] = useState('');
@@ -81,7 +80,7 @@ export default function LoginScreen() {
   const [error, setError] = useState('');
   const [isStepValid, setIsStepValid] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
-  const mapRef = useRef<MapView>(null);
+  const webViewRef = useRef<WebView>(null);
 
   useEffect(() => {
     if (isAuthenticated && !contextLoading) {
@@ -93,41 +92,26 @@ export default function LoginScreen() {
     }
   }, [isAuthenticated, userDetails, contextLoading]);
 
-  // Real-time Validation helpers
   const validateFirstName = (text: string) => {
     const cleaned = text.replace(/[0-9]/g, '');
     setFirstName(cleaned);
-    if (cleaned.trim().length < 2) {
-      setFirstNameError('First name must be at least 2 characters');
-    } else if (/[0-9]/.test(text)) {
-      setFirstNameError('Numbers are not allowed');
-    } else {
-      setFirstNameError('');
-    }
+    if (cleaned.trim().length < 2) setFirstNameError('First name too short');
+    else setFirstNameError('');
   };
 
   const validateLastName = (text: string) => {
     const cleaned = text.replace(/[0-9]/g, '');
     setLastName(cleaned);
-    if (cleaned.trim().length < 2) {
-      setLastNameError('Last name must be at least 2 characters');
-    } else if (/[0-9]/.test(text)) {
-      setLastNameError('Numbers are not allowed');
-    } else {
-      setLastNameError('');
-    }
+    if (cleaned.trim().length < 2) setLastNameError('Last name too short');
+    else setLastNameError('');
   };
 
   const validateBlockLot = (text: string) => {
     setBlockLot(text);
-    if (text.trim().length === 0) {
-      setBlockLotError('Block & Lot Number is required');
-    } else {
-      setBlockLotError('');
-    }
+    if (text.trim().length === 0) setBlockLotError('Required');
+    else setBlockLotError('');
   };
 
-  // Real-time Validation Effect
   useEffect(() => {
     const validate = () => {
       if (!isProfilePending) {
@@ -136,21 +120,16 @@ export default function LoginScreen() {
         if (password.length < 1) return 'Password required';
       } else {
         if (profileStep === 1) {
-          if (!firstName.trim() || firstName.trim().length < 2) return 'First Name too short';
-          if (/[0-9]/.test(firstName)) return 'No numbers in First Name';
-          if (!lastName.trim() || lastName.trim().length < 2) return 'Last Name too short';
-          if (/[0-9]/.test(lastName)) return 'No numbers in Last Name';
-          if (!blockLot.trim()) return 'Block & Lot required';
+          if (!firstName.trim() || firstName.trim().length < 2) return 'First Name error';
+          if (!lastName.trim() || lastName.trim().length < 2) return 'Last Name error';
+          if (!blockLot.trim()) return 'Block & Lot error';
         } else if (profileStep === 2) {
           if (!location) return 'Location required';
         }
       }
       return '';
     };
-
-    const validationError = validate();
-    setIsStepValid(validationError === '');
-    if (error && validationError === '') setError('');
+    setIsStepValid(validate() === '');
   }, [email, password, firstName, lastName, blockLot, location, isProfilePending, profileStep]);
 
   const triggerShake = () => {
@@ -158,8 +137,6 @@ export default function LoginScreen() {
     Animated.sequence([
       Animated.timing(shakeAnim, { toValue: 10, duration: 70, useNativeDriver: true }),
       Animated.timing(shakeAnim, { toValue: -10, duration: 70, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: 6, duration: 70, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: -6, duration: 70, useNativeDriver: true }),
       Animated.timing(shakeAnim, { toValue: 0, duration: 70, useNativeDriver: true }),
     ]).start();
   };
@@ -167,65 +144,77 @@ export default function LoginScreen() {
   const handlePasswordLogin = async () => {
     if (!signInLoaded || !isStepValid) { triggerShake(); return; }
     setLoading(true);
-    setError('');
     try {
       const result = await signIn.create({ identifier: email.trim().toLowerCase(), password });
-      if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId });
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } else { setError('Login incomplete.'); }
-    } catch (err: any) { setError(err.errors?.[0]?.message || 'Login failed'); triggerShake(); }
+      if (result.status === 'complete') await setActive({ session: result.createdSessionId });
+      else setError('Incomplete');
+    } catch (err: any) { setError('Login failed'); triggerShake(); }
     finally { setLoading(false); }
   };
 
-  const handleSocialLogin = async (provider: 'google' | 'facebook') => {
+  const handleSocialLogin = async (provider: 'google') => {
     setLoading(true);
-    setError('');
     try {
-      const flow = provider === 'google' ? startGoogleFlow : startFacebookFlow;
-      const { createdSessionId, setActive: setOAuthActive } = await flow({ redirectUrl: Linking.createURL('/', { scheme: 'hfire' }) });
-      if (createdSessionId && setOAuthActive) {
-        await setOAuthActive({ session: createdSessionId });
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
-    } catch (err: any) { setError(err.message || `${provider} login failed`); triggerShake(); }
+      const { createdSessionId, setActive: setOAuthActive } = await startGoogleFlow({ redirectUrl: Linking.createURL('/', { scheme: 'hfire' }) });
+      if (createdSessionId && setOAuthActive) await setOAuthActive({ session: createdSessionId });
+    } catch (err: any) { setError('Login failed'); triggerShake(); }
     finally { setLoading(false); }
   };
 
   const handleCompleteProfile = async () => {
-    if (profileStep === 1) {
-      if (!isStepValid) { triggerShake(); return; }
-      setError('');
-      setProfileStep(2);
-      return;
-    }
-    if (!isStepValid) { triggerShake(); return; }
+    if (profileStep === 1) { setProfileStep(2); return; }
     setLoading(true);
-    setError('');
     try {
       const fullName = `${lastName.trim()}, ${firstName.trim()}${middleName ? ' ' + middleName.trim() : ''}`;
-      const { error: updateErr } = await updateProfile({
-        name: fullName,
-        block_lot: blockLot.trim(),
-        latitude: location?.latitude,
-        longitude: location?.longitude,
-        address: address.trim(),
-      });
-      if (updateErr) throw updateErr;
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await updateProfile({ name: fullName, block_lot: blockLot.trim(), latitude: location?.latitude, longitude: location?.longitude, address: address.trim() });
       router.replace('/(tabs)');
-    } catch (err: any) { setError(err.message || 'Failed to update profile'); triggerShake(); }
+    } catch (err: any) { setError('Failed'); triggerShake(); }
     finally { setLoading(false); }
   };
 
-  const handleMapPress = async (coords: { latitude: number; longitude: number }) => {
-    setLocation(coords);
+  const mapHtml = useMemo(() => {
+    const initialLat = location?.latitude || 14.5995;
+    const initialLng = location?.longitude || 120.9842;
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <style>body { margin: 0; padding: 0; } #map { height: 100vh; width: 100vw; } .leaflet-control-attribution { display: none; }</style>
+      </head>
+      <body>
+        <div id="map"></div>
+        <script>
+          var map = L.map('map', { zoomControl: false }).setView([${initialLat}, ${initialLng}], 16);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+          var marker = L.marker([${initialLat}, ${initialLng}], { draggable: true }).addTo(map);
+          function updatePos(lat, lng) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({ latitude: lat, longitude: lng }));
+          }
+          map.on('click', function(e) { marker.setLatLng(e.latlng); updatePos(e.latlng.lat, e.latlng.lng); });
+          marker.on('dragend', function(e) { updatePos(e.target.getLatLng().lat, e.target.getLatLng().lng); });
+          window.addEventListener('message', function(event) {
+            var data = JSON.parse(event.data);
+            if (data.type === 'FLY_TO') { marker.setLatLng([data.lat, data.lng]); map.flyTo([data.lat, data.lng], 17); }
+          });
+        </script>
+      </body>
+      </html>
+    `;
+  }, [profileStep]);
+
+  const onMapMessage = (event: any) => {
     try {
-      const [rev] = await Location.reverseGeocodeAsync(coords);
-      if (rev) {
-        const parts = [rev.name, rev.streetNumber, rev.street, rev.subregion, rev.district, rev.city, rev.region];
-        setAddress(parts.filter(Boolean).join(', '));
-      }
+      const coords = JSON.parse(event.nativeEvent.data);
+      setLocation(coords);
+      Location.reverseGeocodeAsync(coords).then(([rev]: any) => {
+        if (rev) {
+          const parts = [rev.name, rev.streetNumber, rev.street, rev.subregion, rev.district, rev.city, rev.region];
+          setAddress(parts.filter(Boolean).join(', '));
+        }
+      });
     } catch (e) {}
   };
 
@@ -236,7 +225,7 @@ export default function LoginScreen() {
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
       setLocation(coords);
-      mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.005, longitudeDelta: 0.005 }, 1000);
+      webViewRef.current?.postMessage(JSON.stringify({ type: 'FLY_TO', lat: coords.latitude, lng: coords.longitude }));
       const [rev] = await Location.reverseGeocodeAsync(coords);
       if (rev) {
         const parts = [rev.name, rev.streetNumber, rev.street, rev.subregion, rev.district, rev.city, rev.region];
@@ -248,69 +237,39 @@ export default function LoginScreen() {
   const sharedProps = { inputBg, textColor, colorScheme, placeholderColor, labelColor };
 
   return (
-    <KeyboardAvoidingView 
-      style={[styles.container, { backgroundColor }]} 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-    >
+    <KeyboardAvoidingView style={[styles.container, { backgroundColor }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-      <View style={[styles.bgTop, { backgroundColor: colorScheme === 'dark' ? 'rgba(33, 150, 243, 0.08)' : 'rgba(33, 150, 243, 0.05)' }]} />
-      <View style={[styles.bgBottom, { backgroundColor: colorScheme === 'dark' ? 'rgba(33, 150, 243, 0.04)' : 'rgba(33, 150, 243, 0.02)' }]} />
-
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={styles.brandRow}>
-          <Image 
-            source={require('@/assets/images/h-fire_logo.png')} 
-            style={styles.logoImage} 
-            resizeMode="contain"
-          />
+          <Image source={require('@/assets/images/h-fire_logo.png')} style={styles.logoImage} resizeMode="contain" />
           <Text style={[styles.brandTitle, { color: textColor }]}>H-FIRE</Text>
           <Text style={styles.brandSub}>RESIDENT MONITOR</Text>
         </View>
 
         <Text style={[styles.subtitle, { color: subtitleColor }]}>
-          {!isProfilePending ? 'Sign in to access your dashboard' : `Complete your profile - Step ${profileStep} of 2`}
+          {!isProfilePending ? 'Sign in to access dashboard' : `Step ${profileStep} of 2`}
         </Text>
 
         <Animated.View style={[styles.form, { transform: [{ translateX: shakeAnim }] }]}>
           {!isProfilePending ? (
             <>
-              <InputField label="Email Address" placeholder="example@email.com" keyboardType="email-address" autoCapitalize="none" maxLength={100} value={email} onChangeText={setEmail} {...sharedProps} />
-              <InputField label="Password" placeholder="Your password" secureTextEntry maxLength={100} value={password} onChangeText={setPassword} {...sharedProps} />
+              <InputField label="Email Address" value={email} onChangeText={setEmail} {...sharedProps} />
+              <InputField label="Password" secureTextEntry value={password} onChangeText={setPassword} {...sharedProps} />
             </>
           ) : profileStep === 1 ? (
             <View style={{ gap: 15 }}>
-              <InputField label="First Name" placeholder="John" maxLength={50} value={firstName} onChangeText={validateFirstName} error={firstNameError} {...sharedProps} />
-              <InputField label="Middle Name (Optional)" placeholder="Quincy" maxLength={50} value={middleName} onChangeText={setMiddleName} {...sharedProps} />
-              <InputField label="Last Name" placeholder="Doe" maxLength={50} value={lastName} onChangeText={validateLastName} error={lastNameError} {...sharedProps} />
-              <InputField label="Block and Lot Number" placeholder="Block 1 Lot 1" maxLength={100} value={blockLot} onChangeText={validateBlockLot} error={blockLotError} {...sharedProps} />
+              <InputField label="First Name" value={firstName} onChangeText={validateFirstName} {...sharedProps} />
+              <InputField label="Middle Name" value={middleName} onChangeText={setMiddleName} {...sharedProps} />
+              <InputField label="Last Name" value={lastName} onChangeText={validateLastName} {...sharedProps} />
+              <InputField label="Block and Lot" value={blockLot} onChangeText={validateBlockLot} {...sharedProps} />
             </View>
           ) : (
             <View style={{ gap: 10 }}>
-              <TouchableOpacity 
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 }} 
-                onPress={() => setProfileStep(1)}
-                disabled={loading}
-              >
-                <FontAwesome name="chevron-left" size={12} color={ACCENT} />
-                <Text style={{ color: ACCENT, fontSize: 13, fontWeight: '700' }}>Back to Step 1</Text>
-              </TouchableOpacity>
-
-              <InputField label="Detailed Household Address" placeholder="House No., Street, etc." maxLength={250} value={address} onChangeText={setAddress} multiline {...sharedProps} />
-              <View style={{ height: 300, borderRadius: 16, overflow: 'hidden' }}>
-                <MapView 
-                  ref={mapRef} 
-                  provider={PROVIDER_GOOGLE}
-                  style={StyleSheet.absoluteFill} 
-                  initialRegion={{ latitude: location?.latitude || 14.5995, longitude: location?.longitude || 120.9842, latitudeDelta: 0.01, longitudeDelta: 0.01 }} 
-                  onPress={(e: any) => handleMapPress(e.nativeEvent.coordinate)}
-                >
-                  {location && <Marker coordinate={location} title="Your Location" />}
-                </MapView>
-                <TouchableOpacity style={styles.locationBtn} onPress={getCurrentLocation}>
-                  <FontAwesome name="location-arrow" size={16} color="#fff" />
-                  <Text style={styles.locationBtnText}>Use Current Location</Text>
-                </TouchableOpacity>
+              <TouchableOpacity onPress={() => setProfileStep(1)} disabled={loading} style={styles.backBtn}><Text style={{ color: ACCENT }}>Back to Step 1</Text></TouchableOpacity>
+              <InputField label="Detailed Household Address" value={address} onChangeText={setAddress} multiline {...sharedProps} />
+              <View style={styles.mapContainer}>
+                <WebView ref={webViewRef} originWhitelist={['*']} source={{ html: mapHtml }} onMessage={onMapMessage} style={styles.map} />
+                <TouchableOpacity style={styles.locationBtn} onPress={getCurrentLocation}><Text style={{ color: '#fff' }}>Use Current Location</Text></TouchableOpacity>
               </View>
             </View>
           )}
@@ -318,36 +277,13 @@ export default function LoginScreen() {
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <TouchableOpacity style={[styles.authBtn, !isStepValid && { opacity: 0.6 }]} onPress={() => { if (isProfilePending) handleCompleteProfile(); else handlePasswordLogin(); }} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : (
-              <Text style={styles.authBtnText}>
-                {isProfilePending ? (profileStep === 1 ? 'CONTINUE' : 'FINISH SETUP') : 'SIGN IN'}
-              </Text>
-            )}
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.authBtnText}>{isProfilePending ? (profileStep === 1 ? 'CONTINUE' : 'FINISH') : 'SIGN IN'}</Text>}
           </TouchableOpacity>
 
           {!isProfilePending && (
-            <>
-              <View style={styles.orRow}>
-                <View style={styles.orLine} />
-                <Text style={[styles.orText, { color: subtitleColor }]}>OR</Text>
-                <View style={styles.orLine} />
-              </View>
-
-              <View style={styles.socialRow}>
-                <TouchableOpacity style={[styles.socialBtn, { backgroundColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', borderColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]} onPress={() => handleSocialLogin('google')}>
-                  <FontAwesome name="google" size={24} color={textColor} />
-                  <Text style={[styles.socialBtnText, { color: textColor }]}>Google</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.linksRow}>
-                <TouchableOpacity onPress={() => router.push('/forgot-password')}>
-                  <Text style={[styles.linkText, { color: subtitleColor }]}>Forgot Password?</Text>
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity style={styles.signupToggle} onPress={() => router.push('/signup')}>
-                <Text style={[styles.toggleBtnText, { color: subtitleColor }]}>Don't have an account? <Text style={{ color: ACCENT }}>Sign Up</Text></Text>
-              </TouchableOpacity>
-            </>
+            <View style={styles.socialRow}>
+              <TouchableOpacity style={styles.socialBtn} onPress={() => handleSocialLogin('google')}><FontAwesome name="google" size={24} color={textColor} /><Text style={{ color: textColor }}>Google</Text></TouchableOpacity>
+            </View>
           )}
         </Animated.View>
       </ScrollView>
@@ -357,33 +293,23 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 40, paddingHorizontal: 20 },
-  bgTop: { position: 'absolute', top: -100, left: -80, width: 350, height: 350, borderRadius: 175 },
-  bgBottom: { position: 'absolute', bottom: -80, right: -80, width: 300, height: 300, borderRadius: 150 },
+  scroll: { flexGrow: 1, justifyContent: 'center', padding: 20 },
   brandRow: { alignItems: 'center', marginBottom: 20 },
-  logoImage: { width: 100, height: 100, marginBottom: 10 },
+  logoImage: { width: 100, height: 100 },
   brandTitle: { fontSize: 32, fontWeight: '900', letterSpacing: 8 },
-  brandSub: { color: ACCENT, fontSize: 12, fontWeight: '900', letterSpacing: 4, marginTop: 4 },
-  subtitle: { fontSize: 14, textAlign: 'center', marginBottom: 30, lineHeight: 22, maxWidth: width * 0.8 },
-  form: { width: '100%', gap: 15 },
+  brandSub: { color: ACCENT, fontSize: 12, fontWeight: '900', letterSpacing: 4 },
+  subtitle: { fontSize: 14, textAlign: 'center', marginBottom: 30 },
+  form: { gap: 15 },
   inputContainer: { gap: 6 },
-  label: { fontSize: 12, fontWeight: '800', marginLeft: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
-  input: { borderRadius: 16, padding: 18, fontSize: 16, borderWidth: 1 },
-  authBtn: { backgroundColor: ACCENT, borderRadius: 16, padding: 20, alignItems: 'center', shadowColor: ACCENT, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 },
-  authBtnText: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 1 },
-  socialRow: { flexDirection: 'row', gap: 15, marginTop: 10 },
-  socialBtn: { flex: 1, flexDirection: 'row', borderRadius: 16, padding: 15, alignItems: 'center', justifyContent: 'center', gap: 10, borderWidth: 1 },
-  socialBtnText: { fontSize: 14, fontWeight: '700' },
-  linksRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 5, marginTop: 5 },
-  linkText: { fontSize: 13, fontWeight: '600' },
-  signupToggle: { marginTop: 20, alignItems: 'center' },
-  toggleBtnText: { fontSize: 14, fontWeight: '600' },
-  errorText: { color: '#FF3B30', fontSize: 13, fontWeight: '700', textAlign: 'center' },
-  orRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 15, paddingHorizontal: 10 },
-  orLine: { flex: 1, height: 1, backgroundColor: 'rgba(0,0,0,0.1)' },
-  orText: { marginHorizontal: 15, fontSize: 13, fontWeight: '800', letterSpacing: 1 },
-  locationBtn: { position: 'absolute', bottom: 10, alignSelf: 'center', backgroundColor: ACCENT, borderRadius: 20, paddingHorizontal: 15, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  locationBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  backToLoginBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 10, gap: 8, marginTop: 5 },
-  backToLoginText: { fontSize: 14, fontWeight: '700', letterSpacing: 0.5 },
+  label: { fontSize: 12, fontWeight: '800' },
+  input: { borderRadius: 16, padding: 18, borderWidth: 1 },
+  authBtn: { backgroundColor: ACCENT, borderRadius: 16, padding: 20, alignItems: 'center' },
+  authBtnText: { color: '#fff', fontSize: 16, fontWeight: '900' },
+  socialRow: { marginTop: 10 },
+  socialBtn: { flexDirection: 'row', borderRadius: 16, padding: 15, alignItems: 'center', justifyContent: 'center', gap: 10, borderWidth: 1 },
+  errorText: { color: '#FF3B30', textAlign: 'center' },
+  mapContainer: { height: 350, borderRadius: 20, overflow: 'hidden' },
+  map: { flex: 1 },
+  locationBtn: { position: 'absolute', bottom: 10, alignSelf: 'center', backgroundColor: ACCENT, padding: 10, borderRadius: 20 },
+  backBtn: { marginBottom: 10 }
 });
