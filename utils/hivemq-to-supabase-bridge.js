@@ -19,6 +19,7 @@ if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
 const HIVEMQ_URL = `wss://${process.env.EXPO_PUBLIC_HIVEMQ_BROKER}:${process.env.EXPO_PUBLIC_HIVEMQ_PORT}/mqtt`;
 const TOPIC_WILDCARD = 'hfire/#';
 
+let deviceCache = {};
 // Throttling state: { [mac]: { lastStatus: 'Normal', lastAlertAt: 0, burstCount: 0 } }
 const alertThrottle = {};
 const BURST_LIMIT = 5; // Send 5 notifications
