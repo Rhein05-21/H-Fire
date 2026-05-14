@@ -19,10 +19,10 @@ if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
 const HIVEMQ_URL = `wss://${process.env.EXPO_PUBLIC_HIVEMQ_BROKER}:${process.env.EXPO_PUBLIC_HIVEMQ_PORT}/mqtt`;
 const TOPIC_WILDCARD = 'hfire/#';
 
-let deviceCache = {};
-// Throttling state: { [mac]: { lastStatus: 'Normal', lastAlertAt: 0 } }
+// Throttling state: { [mac]: { lastStatus: 'Normal', lastAlertAt: 0, burstCount: 0 } }
 const alertThrottle = {};
-const COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes cooldown for same alert type
+const BURST_LIMIT = 5; // Send 5 notifications
+const COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes cooldown after burst
 
 // Refresh device mapping & update Bridge Heartbeat every 30 seconds
 async function refreshDeviceCache() {
@@ -49,21 +49,42 @@ setInterval(refreshDeviceCache, 30000);
 async function sendPushNotification(ownerId, houseName, alertType, ppm, mac, currentStatus) {
   try {
     const now = Date.now();
-    const throttle = alertThrottle[mac] || { lastStatus: 'Normal', lastAlertAt: 0 };
+    // Initialize throttle if not exists
+    if (!alertThrottle[mac]) {
+      alertThrottle[mac] = { lastStatus: 'Normal', lastAlertAt: 0, burstCount: 0 };
+    }
+    
+    const throttle = alertThrottle[mac];
 
-    // THROTTLING LOGIC:
-    // 1. Send if status ESCALATED (e.g. Normal -> Warning, Warning -> Danger)
-    // 2. Send if status is SAME but COOLDOWN has passed
+    // 1. ESCALATION CHECK: If status improved or worsened significantly, reset burst
     const isEscalation = (currentStatus === 'Danger' && throttle.lastStatus !== 'Danger') || 
                          (currentStatus === 'Warning' && throttle.lastStatus === 'Normal');
-    const isCooldownOver = (now - throttle.lastAlertAt) > COOLDOWN_MS;
 
-    if (!isEscalation && !isCooldownOver) {
-      // console.log(`⏳ Throttled: Skipping repeat ${currentStatus} alert for ${mac}`);
-      return;
+    if (isEscalation) {
+      console.log(`🚀 Escalation detected for ${mac} (${currentStatus}). Resetting burst.`);
+      throttle.burstCount = 0;
+      throttle.lastAlertAt = 0;
     }
 
-    // 1. Fetch all registered tokens for this user
+    // 2. COOLDOWN CHECK: If burst limit reached, check if 5 mins have passed
+    if (throttle.burstCount >= BURST_LIMIT) {
+      const timeSinceLastAlert = now - throttle.lastAlertAt;
+      if (timeSinceLastAlert < COOLDOWN_MS) {
+        // Still in cooldown
+        return;
+      } else {
+        // Cooldown over, reset burst
+        console.log(`⏰ Cooldown over for ${mac}. Starting new burst.`);
+        throttle.burstCount = 0;
+      }
+    }
+
+    // 3. PRE-UPDATE THROTTLE (To prevent race conditions during async fetch)
+    throttle.burstCount += 1;
+    throttle.lastAlertAt = now;
+    throttle.lastStatus = currentStatus;
+
+    // 4. Fetch all registered tokens for this user
     const { data: tokens, error: tokenErr } = await supabase
       .from('user_push_tokens')
       .select('token')
@@ -73,20 +94,14 @@ async function sendPushNotification(ownerId, houseName, alertType, ppm, mac, cur
 
     if (!tokens || tokens.length === 0) {
       console.log(`⚠️ No push tokens found in user_push_tokens for user: ${ownerId}`);
-      // Fallback to legacy profiles table token if new table is empty
-      const { data: legacyProfile } = await supabase
-        .from('profiles')
-        .select('push_token')
-        .eq('id', ownerId)
-        .single();
-      
-      if (!legacyProfile?.push_token) return;
-      tokens.push({ token: legacyProfile.push_token });
+      // Legacy fallback
+      const { data: lp } = await supabase.from('profiles').select('push_token').eq('id', ownerId).single();
+      if (lp?.push_token) tokens.push({ token: lp.push_token });
+      else return;
     }
 
-    console.log(`🔔 [${new Date().toLocaleTimeString()}] Sending Push Alert to ${tokens.length} device(s) for owner: ${ownerId} (${currentStatus})`);
+    console.log(`🔔 [${new Date().toLocaleTimeString()}] Sending Push [${throttle.burstCount}/${BURST_LIMIT}] to ${tokens.length} device(s) for owner: ${ownerId} (${currentStatus})`);
 
-    // Expo allows sending up to 100 notifications in one request
     const messages = tokens.map(t => ({
       to: t.token,
       sound: 'default',
@@ -99,18 +114,13 @@ async function sendPushNotification(ownerId, houseName, alertType, ppm, mac, cur
 
     const response = await fetch('https://exp.host/--/api/v2/push/send', {
       method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
       body: JSON.stringify(messages),
     });
 
     const result = await response.json();
-    console.log('✅ Expo Multi-Send Response:', JSON.stringify(result));
+    console.log('✅ Expo Response:', JSON.stringify(result));
 
-    // Update throttle state
-    alertThrottle[mac] = { lastStatus: currentStatus, lastAlertAt: now };
   } catch (error) {
     console.error('❌ Push Error:', error.message);
   }
