@@ -6,7 +6,7 @@ H-Fire is an integrated emergency response and monitoring system for fire and ga
 ### Core Technologies
 - **Mobile App:** Expo (React Native, TypeScript)
 - **Backend/Database:** Supabase (Auth, DB, Realtime)
-- **Authentication:** Clerk + Supabase
+- **Authentication:** Supabase Auth (Email/OTP, OAuth)
 - **IoT Messaging:** HiveMQ (MQTT)
 - **Hardware:** ESP32, MQ2 Gas Sensor, KY-026 Flame Sensor, I2C LCD
 - **Alerting:** Expo Notifications, `expo-av` (Sirens), Haptics
@@ -53,7 +53,6 @@ Ensure the following are set in `.env`:
 - `EXPO_PUBLIC_SUPABASE_URL`
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` (Required for Bridge)
-- `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`
 - `EXPO_PUBLIC_HIVEMQ_BROKER`
 - `EXPO_PUBLIC_HIVEMQ_USERNAME`
 - `EXPO_PUBLIC_HIVEMQ_PASSWORD`

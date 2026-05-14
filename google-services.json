@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "88837696715",
+    "project_id": "h-fire-85e41",
+    "storage_bucket": "h-fire-85e41.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:88837696715:android:62f2947a165347c512ff4e",
+        "android_client_info": {
+          "package_name": "com.tigle.hfire"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDUMRvEDgsnRGKa33RH756Fw0GQFwbC6e0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

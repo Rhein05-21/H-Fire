@@ -20,6 +20,9 @@ const HIVEMQ_URL = `wss://${process.env.EXPO_PUBLIC_HIVEMQ_BROKER}:${process.env
 const TOPIC_WILDCARD = 'hfire/#';
 
 let deviceCache = {};
+// Throttling state: { [mac]: { lastStatus: 'Normal', lastAlertAt: 0 } }
+const alertThrottle = {};
+const COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes cooldown for same alert type
 
 // Refresh device mapping & update Bridge Heartbeat every 30 seconds
 async function refreshDeviceCache() {
@@ -39,35 +42,60 @@ async function refreshDeviceCache() {
   });
 }
 
-
 refreshDeviceCache();
 setInterval(refreshDeviceCache, 30000);
 
 // --- PUSH NOTIFICATION LOGIC ---
-async function sendPushNotification(ownerId, houseName, alertType, ppm) {
+async function sendPushNotification(ownerId, houseName, alertType, ppm, mac, currentStatus) {
   try {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('push_token, name')
-      .eq('id', ownerId)
-      .single();
+    const now = Date.now();
+    const throttle = alertThrottle[mac] || { lastStatus: 'Normal', lastAlertAt: 0 };
 
-    if (!profile?.push_token) {
-      console.log(`⚠️ No push token found for user: ${ownerId}`);
+    // THROTTLING LOGIC:
+    // 1. Send if status ESCALATED (e.g. Normal -> Warning, Warning -> Danger)
+    // 2. Send if status is SAME but COOLDOWN has passed
+    const isEscalation = (currentStatus === 'Danger' && throttle.lastStatus !== 'Danger') || 
+                         (currentStatus === 'Warning' && throttle.lastStatus === 'Normal');
+    const isCooldownOver = (now - throttle.lastAlertAt) > COOLDOWN_MS;
+
+    if (!isEscalation && !isCooldownOver) {
+      // console.log(`⏳ Throttled: Skipping repeat ${currentStatus} alert for ${mac}`);
       return;
     }
 
-    console.log(`🔔 Sending Push Alert to: ${profile.name}`);
+    // 1. Fetch all registered tokens for this user
+    const { data: tokens, error: tokenErr } = await supabase
+      .from('user_push_tokens')
+      .select('token')
+      .eq('profile_id', ownerId);
 
-    const message = {
-      to: profile.push_token,
+    if (tokenErr) throw tokenErr;
+
+    if (!tokens || tokens.length === 0) {
+      console.log(`⚠️ No push tokens found in user_push_tokens for user: ${ownerId}`);
+      // Fallback to legacy profiles table token if new table is empty
+      const { data: legacyProfile } = await supabase
+        .from('profiles')
+        .select('push_token')
+        .eq('id', ownerId)
+        .single();
+      
+      if (!legacyProfile?.push_token) return;
+      tokens.push({ token: legacyProfile.push_token });
+    }
+
+    console.log(`🔔 [${new Date().toLocaleTimeString()}] Sending Push Alert to ${tokens.length} device(s) for owner: ${ownerId} (${currentStatus})`);
+
+    // Expo allows sending up to 100 notifications in one request
+    const messages = tokens.map(t => ({
+      to: t.token,
       sound: 'default',
       title: `🔥 EMERGENCY: ${alertType} DETECTED`,
       body: `${houseName}: Critical level detected (${ppm} PPM). Check the app!`,
-      data: { houseName, alertType, ppm },
+      data: { houseName, alertType, ppm, mac },
       priority: 'high',
-      channelId: 'emergency-alerts', // Matches the channel created in the app for background delivery
-    };
+      channelId: 'emergency-alerts',
+    }));
 
     const response = await fetch('https://exp.host/--/api/v2/push/send', {
       method: 'POST',
@@ -75,11 +103,14 @@ async function sendPushNotification(ownerId, houseName, alertType, ppm) {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(message),
+      body: JSON.stringify(messages),
     });
 
     const result = await response.json();
-    console.log('✅ Expo Response:', result);
+    console.log('✅ Expo Multi-Send Response:', JSON.stringify(result));
+
+    // Update throttle state
+    alertThrottle[mac] = { lastStatus: currentStatus, lastAlertAt: now };
   } catch (error) {
     console.error('❌ Push Error:', error.message);
   }
@@ -188,6 +219,11 @@ async function processMessage(topic, payload) {
       alertType = 'GAS / SMOKE LEAK';
     }
 
+    // Reset throttle status if it returns to Normal
+    if (status === 'Normal' && alertThrottle[mac]) {
+      alertThrottle[mac].lastStatus = 'Normal';
+    }
+
     await supabase.from('gas_logs').insert([{ 
       device_mac: mac, ppm_level: ppm, status, profile_id: ownerId 
     }]);
@@ -203,7 +239,7 @@ async function processMessage(topic, payload) {
         }]);
       }
 
-      await sendPushNotification(ownerId, device?.house_name || 'Home', alertType, ppm);
+      await sendPushNotification(ownerId, device?.house_name || 'Home', alertType, ppm, mac, status);
     }
   }
 }

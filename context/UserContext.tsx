@@ -3,11 +3,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Linking from 'expo-linking';
 import mqtt from 'mqtt';
 import { supabase } from '@/utils/supabase';
-import { useAuth, useUser as useClerkUser, useSignIn, useSignUp } from '@clerk/clerk-expo';
 
 interface UserDetails {
   name: string; 
-  block_lot: string; // Reverted to block_lot
+  email?: string;
+  block_lot: string; 
   address?: string; 
   latitude?: number; 
   longitude?: number; 
@@ -45,13 +45,12 @@ const UserContext = createContext<UserContextType | undefined>(undefined);
 const HIVEMQ_URL = `wss://${process.env.EXPO_PUBLIC_HIVEMQ_BROKER}:${process.env.EXPO_PUBLIC_HIVEMQ_PORT}/mqtt`;
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
-  const { isLoaded, userId, sessionId, getToken, signOut: clerkSignOut } = useAuth();
-  
   const [userDetails, setUserDetailsState] = useState<UserDetails | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [bridgeHeartbeat, setBridgeHeartbeat] = useState<Date | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   
   const [activeIncident, setActiveIncident] = useState<Incident | null>(null);
   const [allHeardDevices, setAllHeardDevices] = useState<Record<string, Device>>({});
@@ -62,40 +61,45 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     return secondsSinceLastPing < 90 ? 'Online' : 'Offline';
   }, [bridgeHeartbeat]);
 
-  const isAuthenticated = !!userId;
-
   const [registry, setRegistry] = useState<Record<string, any>>({});
   const registryRef = useRef<Record<string, any>>({});
 
   useEffect(() => {
-    const syncAuth = async () => {
-      if (userId) {
-        try {
-          const token = await getToken({ template: 'supabase' });
-          if (token) {
-            await supabase.auth.setSession({
-              access_token: token,
-              refresh_token: '',
-            });
-          }
-        } catch (e) {
-          console.error('Error syncing Clerk with Supabase:', e);
-        }
-      }
-    };
-
-    if (isLoaded) {
-      if (userId) {
-        setProfileId(userId);
-        syncAuth().then(() => refreshProfile(userId));
+    // Initial session check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        console.log('[UserContext] Initial session found');
+        setIsAuthenticated(true);
+        setProfileId(session.user.id);
+        refreshProfile(session.user.id);
       } else {
+        console.log('[UserContext] No initial session');
+        setIsAuthenticated(false);
+        setProfileId(null);
+        setLoading(false);
+      }
+    });
+
+    // Auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('[UserContext] Auth event:', event);
+      if (session) {
+        setIsAuthenticated(true);
+        setProfileId(session.user.id);
+        refreshProfile(session.user.id);
+      } else {
+        setIsAuthenticated(false);
         setProfileId(null);
         setUserDetailsState(null);
         setIsAdmin(false);
         setLoading(false);
       }
-    }
-  }, [isLoaded, userId]);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const devices = useMemo(() => {
     const mine: Record<string, Device> = {};
@@ -125,46 +129,65 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const refreshProfile = async (uid?: string) => {
     const targetId = uid || profileId;
-    if (!targetId) { setLoading(false); return; }
+    if (!targetId) { 
+      setLoading(false); 
+      return; 
+    }
 
-    setLoading(true);
+    console.log('[UserContext] Refreshing profile for:', targetId);
+    // Use loading only for initial load, not for every refresh to avoid UI freeze
+    if (!userDetails) setLoading(true);
+    
     try {
-      const { data: dbProfile, error: profileErr } = await supabase.from('profiles').select('*').eq('id', targetId).single();
+      const { data: dbProfile, error: profileErr } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', targetId)
+        .maybeSingle();
       
+      if (profileErr) console.error('[UserContext] Profile error:', profileErr.message);
+
       if (dbProfile) {
-        const profileData: UserDetails = { 
+        console.log('[UserContext] Profile loaded:', dbProfile.name);
+        setUserDetailsState({ 
           name: dbProfile.name, 
+          email: dbProfile.email,
           block_lot: dbProfile.block_lot, 
           address: dbProfile.address,
           latitude: dbProfile.latitude, 
           longitude: dbProfile.longitude,
           is_admin: dbProfile.is_admin
-        };
-        setUserDetailsState(profileData);
+        });
         setIsAdmin(!!dbProfile.is_admin);
       } else {
+        console.log('[UserContext] No profile record found.');
         setUserDetailsState(null);
         setIsAdmin(false);
       }
+    } catch (e: any) { 
+      console.error('[UserContext] Refresh exception:', e); 
+    } finally {
+      console.log('[UserContext] Profile refresh complete.');
+      setLoading(false);
+    }
 
-      const { data: hb } = await supabase.from('app_settings').select('value').eq('key', 'bridge_heartbeat').single();
-      if (hb) setBridgeHeartbeat(new Date(hb.value));
-
-      const { data: reg } = await supabase.from('devices').select('*');
+    // Secondary non-blocking data
+    supabase.from('app_settings').select('value').eq('key', 'bridge_heartbeat').maybeSingle()
+      .then(({ data: hb }) => hb && setBridgeHeartbeat(new Date(hb.value)));
+    
+    supabase.from('devices').select('*').then(({ data: reg }) => {
       if (reg) {
         const cache: any = {};
-        reg.forEach(d => { cache[d.mac] = d; }); // Store by original key
+        reg.forEach(d => { cache[d.mac] = d; });
         setRegistry(cache);
         registryRef.current = cache;
       }
-    } catch (e: any) { console.error(e); }
-    finally { setLoading(false); }
+    });
   };
 
   const signOut = async () => {
     setLoading(true);
     try { 
-      await clerkSignOut(); 
       await supabase.auth.signOut();
     } catch (e) {}
     setProfileId(null);
@@ -175,10 +198,18 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const updateProfile = async (details: UserDetails) => {
     if (!profileId) return { error: new Error('Not authenticated') };
-    
+
+    // Use provided email, or current user email from auth, or existing state
+    let finalEmail = details.email;
+    if (!finalEmail) {
+      const { data: { user } } = await supabase.auth.getUser();
+      finalEmail = user?.email || userDetails?.email;
+    }
+
     const { error } = await supabase.from('profiles').upsert({
       id: profileId,
       name: details.name,
+      email: finalEmail,
       block_lot: details.block_lot, 
       address: details.address,
       latitude: details.latitude,
@@ -188,8 +219,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     });
 
     if (!error) {
-      setUserDetailsState(details);
+      const updatedDetails = { ...details, email: finalEmail };
+      setUserDetailsState(updatedDetails);
       setIsAdmin(!!details.is_admin);
+      await AsyncStorage.setItem('HFIRE_USER_DETAILS', JSON.stringify(updatedDetails));
     }
     return { error };
   };

@@ -14,6 +14,7 @@
     },
     "android": {
       "package": "com.tigle.hfire",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#121212",
         "foregroundImage": "./assets/images/h-fire_logo.png",
@@ -66,8 +67,7 @@
     "extra": {
       "eas": {
         "projectId": "0d1a5ce6-68ef-487a-9efe-25a61a61f8b2"
-      },
-      "clerkProxyUrl": "https://valued-vulture-7.clerk.accounts.dev"
+      }
     }
   }
 }

@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { StyleSheet, View, Text, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl, Platform, Alert, Modal } from 'react-native';
+import { StyleSheet, View, Text, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl, Platform, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '@/utils/supabase';
 import { useUser } from '@/context/UserContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -16,8 +17,8 @@ export default function HistoryScreen() {
   const [refreshing, setRefreshing] = useState(false);
   
   // Date & UI State
-  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
-  const [showCalendar, setShowCalendar] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [showPicker, setShowPicker] = useState(false);
 
   const backgroundColor = useThemeColor({}, 'background');
   const cardBg = useThemeColor({ light: '#fff', dark: '#1c1c1e' }, 'background');
@@ -47,17 +48,14 @@ export default function HistoryScreen() {
       const [{ data: logData }, { data: alertData }] = await Promise.all([logQuery, alertQuery]);
 
       // --- DEDUPLICATION & OVERWRITING LOGIC ---
-      // We want to show the LATEST event per device to keep the list clean (Overwriting)
       const latestMap = new Map();
 
-      // Process Alerts first (Priority)
       (alertData || []).forEach(a => {
         if (!latestMap.has(a.device_mac)) {
           latestMap.set(a.device_mac, { ...a, type: 'ALERT', timestamp: a.start_time, uniqueId: `alert-${a.id}` });
         }
       });
 
-      // Process regular logs (only if no alert exists or if log is newer)
       (logData || []).forEach(l => {
         const existing = latestMap.get(l.device_mac);
         if (!existing || new Date(l.created_at) > new Date(existing.timestamp)) {
@@ -97,59 +95,12 @@ export default function HistoryScreen() {
     fetchData();
   }, [profileId, selectedDate]);
 
-  // --- CUSTOM CALENDAR MODAL ---
-  const renderCalendar = () => {
-    const calendarDate = selectedDate || new Date();
-    const daysInMonth = new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 0).getDate();
-    const days = [];
-    for (let i = 1; i <= daysInMonth; i++) days.push(i);
-    const monthKey = `${calendarDate.getFullYear()}-${calendarDate.getMonth()}`;
-    const today = new Date();
-    today.setHours(0,0,0,0);
-
-    return (
-      <Modal visible={showCalendar} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.calendarCard, { backgroundColor: cardBg }]}>
-            <View style={styles.calendarHeader}>
-              <Text style={[styles.monthText, { color: textColor }]}>
-                {calendarDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-              </Text>
-              <TouchableOpacity onPress={() => setShowCalendar(false)}>
-                <IconSymbol name="xmark.circle.fill" size={24} color={secondaryText} />
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.daysGrid}>
-              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, idx) => (
-                <Text key={`day-label-${idx}`} style={styles.dayLabel}>{d}</Text>
-              ))}
-              {days.map(d => {
-                const cellDate = new Date(calendarDate.getFullYear(), calendarDate.getMonth(), d);
-                const isFuture = cellDate > today;
-                const isSelected = selectedDate && d === selectedDate.getDate() && calendarDate.getMonth() === selectedDate.getMonth();
-                
-                return (
-                  <TouchableOpacity 
-                    key={`${monthKey}-${d}`} 
-                    onPress={() => {
-                      if (isFuture) return;
-                      setSelectedDate(cellDate);
-                      setShowCalendar(false);
-                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                    }}
-                    disabled={isFuture}
-                    style={[styles.dayCell, isSelected && { backgroundColor: accentColor }, isFuture && { opacity: 0.15 }]}
-                  >
-                    <Text style={[styles.dayText, { color: isSelected ? '#fff' : (isFuture ? secondaryText : textColor) }]}>{d}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-        </View>
-      </Modal>
-    );
+  const onDateChange = (event: any, date?: Date) => {
+    setShowPicker(Platform.OS === 'ios');
+    if (date) {
+      setSelectedDate(date);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
   };
 
   const renderItem = ({ item }: { item: any }) => {
@@ -186,16 +137,27 @@ export default function HistoryScreen() {
         <View style={styles.titleRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.brandText}>H-FIRE HISTORY</Text>
-            <Text style={[styles.title, { color: textColor }]}>Event Logs</Text>
+            <Text style={[styles.title, { color: textColor }]}>Incident Logs</Text>
           </View>
-          <TouchableOpacity style={styles.calendarBtn} onPress={() => setShowCalendar(true)}>
+          <TouchableOpacity style={styles.calendarBtn} onPress={() => setShowPicker(true)}>
             <IconSymbol name="calendar" size={24} color={accentColor} />
             {selectedDate && <View style={styles.filterDot} />}
           </TouchableOpacity>
         </View>
+        <Text style={{ color: secondaryText, fontSize: 13, marginTop: 5, fontWeight: '600' }}>
+          Showing: {selectedDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+        </Text>
       </View>
 
-      {renderCalendar()}
+      {showPicker && (
+        <DateTimePicker
+          value={selectedDate}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'inline' : 'default'}
+          onChange={onDateChange}
+          maximumDate={new Date()}
+        />
+      )}
 
       {loading && history.length === 0 ? (
         <View style={styles.center}><ActivityIndicator size="large" color={accentColor} /></View>
@@ -211,7 +173,7 @@ export default function HistoryScreen() {
             <View style={styles.empty}>
               <IconSymbol name="doc.text.magnifyingglass" size={50} color={borderColor} />
               <Text style={[styles.emptyText, { color: secondaryText }]}>
-                No activity found for {selectedDate ? selectedDate.toLocaleDateString() : 'all time'}.
+                No incidents found for {selectedDate.toLocaleDateString()}.
               </Text>
             </View>
           }
@@ -230,15 +192,6 @@ const styles = StyleSheet.create({
   
   calendarBtn: { padding: 12, backgroundColor: 'rgba(33, 150, 243, 0.1)', borderRadius: 16, position: 'relative' },
   filterDot: { position: 'absolute', top: 10, right: 10, width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF3B30', borderWidth: 2, borderColor: '#fff' },
-
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  calendarCard: { width: '100%', borderRadius: 28, padding: 22, elevation: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 20 },
-  calendarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
-  monthText: { fontSize: 20, fontWeight: '900' },
-  daysGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  dayLabel: { width: '14.28%', textAlign: 'center', fontSize: 12, fontWeight: '800', color: '#8E8E93', marginBottom: 20 },
-  dayCell: { width: '14.28%', height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 12, marginBottom: 8 },
-  dayText: { fontSize: 15, fontWeight: '700' },
 
   list: { padding: 20, paddingBottom: 100 },
   logCard: { borderRadius: 24, marginBottom: 16, flexDirection: 'row', overflow: 'hidden', ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10 }, android: { elevation: 3 } }) },

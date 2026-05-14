@@ -1,8 +1,9 @@
 import { useUser } from '@/context/UserContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { useOAuth, useSignIn } from '@clerk/clerk-expo';
+import { supabase } from '@/utils/supabase';
 import { FontAwesome } from '@expo/vector-icons';
+import * as AuthSession from 'expo-auth-session';
 import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
 import * as Location from 'expo-location';
@@ -24,6 +25,7 @@ import {
   TouchableOpacity,
   View,
   Alert,
+  Modal,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 
@@ -56,9 +58,6 @@ export default function LoginScreen() {
   const subtitleColor = colorScheme === 'dark' ? 'rgba(255,255,255,0.5)' : '#666';
   const labelColor = colorScheme === 'dark' ? 'rgba(255,255,255,0.6)' : '#444';
 
-  const { signIn, setActive, isLoaded: signInLoaded } = useSignIn();
-  const { startOAuthFlow: startGoogleFlow } = useOAuth({ strategy: "oauth_google" });
-
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   
@@ -78,13 +77,19 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isStepValid, setIsStepValid] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const webViewRef = useRef<WebView>(null);
 
   useEffect(() => {
     if (isAuthenticated && !contextLoading) {
-      if (userDetails && userDetails.name && userDetails.block_lot) router.replace('/(tabs)');
-      else setIsProfilePending(true);
+      if (userDetails && userDetails.name && userDetails.block_lot) {
+        console.log('[Login] Profile complete, navigating to tabs');
+        router.replace('/(tabs)');
+      } else {
+        console.log('[Login] Profile incomplete, showing setup form');
+        setIsProfilePending(true);
+      }
     }
   }, [isAuthenticated, userDetails, contextLoading]);
 
@@ -137,23 +142,66 @@ export default function LoginScreen() {
   };
 
   const handlePasswordLogin = async () => {
-    if (!signInLoaded || !isStepValid) return triggerShake();
+    if (!isStepValid) return triggerShake();
     setLoading(true);
     try {
-      const result = await signIn.create({ identifier: email.trim().toLowerCase(), password });
-      if (result.status === 'complete') await setActive({ session: result.createdSessionId });
-      else setError('Login incomplete.');
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+      if (error) throw error;
     } catch (err: any) { setError('Invalid email or password'); triggerShake(); }
     finally { setLoading(false); }
   };
 
   const handleSocialLogin = async () => {
+    console.log('[Login] Starting Google OAuth...');
     setLoading(true);
+    setError('');
     try {
-      const { createdSessionId, setActive: setOAuthActive } = await startGoogleFlow({ redirectUrl: Linking.createURL('/', { scheme: 'hfire' }) });
-      if (createdSessionId && setOAuthActive) await setOAuthActive({ session: createdSessionId });
-    } catch (err: any) { setError('Google login failed'); triggerShake(); }
-    finally { setLoading(false); }
+      const redirectUrl = AuthSession.makeRedirectUri({ path: 'login' });
+      console.log('[Login] Redirect URL:', redirectUrl);
+
+      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+          skipBrowserRedirect: true,
+        },
+      });
+      if (oauthError) throw oauthError;
+
+      console.log('[Login] Opening WebBrowser...');
+      const res = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+      console.log('[Login] WebBrowser closed with type:', res.type);
+
+      if (res.type === 'success' && res.url) {
+        console.log('[Login] Parsing tokens from return URL...');
+        const params: Record<string, string> = {};
+        const regex = /[?&#]([^=#]+)=([^&#]*)/g;
+        let match;
+        while ((match = regex.exec(res.url)) !== null) {
+          params[match[1]] = decodeURIComponent(match[2]);
+        }
+        
+        const accessToken = params.access_token;
+        const refreshToken = params.refresh_token;
+
+        if (accessToken) {
+          console.log('[Login] Setting session from browser return...');
+          await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken || '',
+          });
+        }
+      } else {
+        console.log('[Login] Browser closed without URL return.');
+      }
+    } catch (err: any) {
+      console.error('[Login] Google Auth Error:', err);
+      setError(err.message || 'Google login failed');
+      triggerShake();
+    } finally {
+      console.log('[Login] handleSocialLogin finished');
+      setLoading(false);
+    }
   };
 
   const handleCompleteProfile = async () => {
@@ -267,7 +315,12 @@ export default function LoginScreen() {
           {!isProfilePending ? (
             <>
               <InputField label="Email Address" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" {...sharedProps} />
-              <InputField label="Password" value={password} onChangeText={setPassword} secureTextEntry {...sharedProps} />
+              <View style={{ position: 'relative' }}>
+                <InputField label="Password" value={password} onChangeText={setPassword} secureTextEntry {...sharedProps} />
+                <TouchableOpacity onPress={() => router.push('/forgot-password')} style={styles.forgotPasswordSmall}>
+                  <Text style={[styles.linkSmallText, { color: ACCENT }]}>Forgot Password?</Text>
+                </TouchableOpacity>
+              </View>
             </>
           ) : profileStep === 1 ? (
             <View style={{ gap: 15 }}>
@@ -284,7 +337,7 @@ export default function LoginScreen() {
               <InputField label="Detailed Household Address" value={address} onChangeText={setAddress} multiline {...sharedProps} />
               <View style={styles.mapContainer}>
                 <WebView ref={webViewRef} originWhitelist={['*']} source={{ html: mapHtml }} onMessage={onMapMessage} style={styles.map} scrollEnabled={false} />
-                <TouchableOpacity style={styles.locationBtn} onPress={getCurrentLocation}>
+                <TouchableOpacity style={styles.location_btn} onPress={getCurrentLocation}>
                   <FontAwesome name="location-arrow" size={14} color="#fff" />
                   <Text style={{ color: '#fff', fontWeight: '800', marginLeft: 6 }}>Find Me</Text>
                 </TouchableOpacity>
@@ -296,7 +349,7 @@ export default function LoginScreen() {
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <TouchableOpacity style={[styles.authBtn, !isStepValid && { opacity: 0.6 }]} onPress={() => { if (isProfilePending) handleCompleteProfile(); else handlePasswordLogin(); }} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.authBtnText}>{isProfilePending ? (profileStep === 1 ? 'CONTINUE' : 'FINISH SETUP') : 'SIGN IN'}</Text>}
+            {loading && !isProfilePending ? <ActivityIndicator color="#fff" /> : <Text style={styles.authBtnText}>{isProfilePending ? (profileStep === 1 ? 'CONTINUE' : 'FINISH SETUP') : 'SIGN IN'}</Text>}
           </TouchableOpacity>
 
           {!isProfilePending && (
@@ -307,26 +360,45 @@ export default function LoginScreen() {
                 <View style={styles.orLine} />
               </View>
 
-              <TouchableOpacity style={styles.socialBtn} onPress={handleSocialLogin}>
-                <FontAwesome name="google" size={20} color={textColor} />
-                <Text style={[styles.socialText, { color: textColor }]}>Continue with Google</Text>
+              <TouchableOpacity style={styles.socialBtn} onPress={handleSocialLogin} disabled={loading}>
+                {loading ? <ActivityIndicator color={textColor} /> : (
+                  <>
+                    <FontAwesome name="google" size={20} color={textColor} />
+                    <Text style={[styles.socialText, { color: textColor }]}>Continue with Google</Text>
+                  </>
+                )}
               </TouchableOpacity>
-
-              <View style={styles.linksRow}>
-                <TouchableOpacity onPress={() => router.push('/forgot-password')}>
-                  <Text style={[styles.linkText, { color: subtitleColor }]}>Forgot Password?</Text>
-                </TouchableOpacity>
-              </View>
 
               <TouchableOpacity style={styles.signupToggle} onPress={() => router.push('/signup')}>
                 <Text style={[styles.toggleBtnText, { color: subtitleColor }]}>
                   Don't have an account? <Text style={{ color: ACCENT, fontWeight: '800' }}>Sign Up</Text>
                 </Text>
               </TouchableOpacity>
+
+              <TouchableOpacity style={styles.privacyPolicyBtn} onPress={() => setShowPrivacyModal(true)}>
+                <Text style={[styles.privacyPolicyText, { color: subtitleColor }]}>Privacy Policy</Text>
+              </TouchableOpacity>
             </>
           )}
         </Animated.View>
       </ScrollView>
+
+      <Modal visible={showPrivacyModal} animationType="slide" transparent={false}>
+        <View style={{ flex: 1, backgroundColor }}>
+          <View style={{ padding: 20, paddingTop: 60, paddingBottom: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: 'rgba(128,128,128,0.1)' }}>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: textColor }}>Privacy Policy</Text>
+            <TouchableOpacity onPress={() => setShowPrivacyModal(false)} style={{ padding: 5 }}>
+              <FontAwesome name="close" size={24} color={textColor} />
+            </TouchableOpacity>
+          </View>
+          <WebView 
+            source={{ uri: 'https://docs.google.com/document/d/e/2PACX-1vRsHZcfblnrZVzQf07-l1YuJ4XIU5tV1tS2m9zi3-M0EP-U3DU8KNi-iKw2YB63tQ9q3eGKxMrb7fnt/pub?embedded=true' }}
+            style={{ flex: 1 }}
+            startInLoadingState
+            renderLoading={() => <ActivityIndicator size="large" color={ACCENT} style={{ position: 'absolute', top: '50%', left: '50%', marginLeft: -20, marginTop: -20 }} />}
+          />
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -358,6 +430,10 @@ const styles = StyleSheet.create({
   inlineError: { color: '#FF3B30', fontSize: 10, fontWeight: '700', marginLeft: 5 },
   mapContainer: { height: 350, borderRadius: 24, overflow: 'hidden', backgroundColor: '#eee', borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' },
   map: { flex: 1 },
-  locationBtn: { position: 'absolute', bottom: 15, right: 15, backgroundColor: ACCENT, paddingHorizontal: 15, paddingVertical: 10, borderRadius: 15, flexDirection: 'row', alignItems: 'center', elevation: 5 },
-  backBtn: { marginBottom: 15, paddingVertical: 5 }
+  location_btn: { position: 'absolute', bottom: 15, right: 15, backgroundColor: ACCENT, paddingHorizontal: 15, paddingVertical: 10, borderRadius: 15, flexDirection: 'row', alignItems: 'center', elevation: 5 },
+  backBtn: { marginBottom: 15, paddingVertical: 5 },
+  privacyPolicyBtn: { marginTop: 15, alignItems: 'center', padding: 10 },
+  privacyPolicyText: { fontSize: 12, fontWeight: '600', textDecorationLine: 'underline' },
+  forgotPasswordSmall: { alignSelf: 'flex-end', marginTop: -5, paddingVertical: 5 },
+  linkSmallText: { fontSize: 13, fontWeight: '700' }
 });

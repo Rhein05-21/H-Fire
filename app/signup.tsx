@@ -19,7 +19,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { useUser } from '@/context/UserContext';
-import { useSignUp } from '@clerk/clerk-expo';
+import { supabase } from '@/utils/supabase';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -45,7 +45,6 @@ export default function SignupScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const { updateProfile } = useUser();
-  const { isLoaded, signUp, setActive } = useSignUp();
 
   const backgroundColor = useThemeColor({}, 'background');
   const textColor = useThemeColor({}, 'text');
@@ -57,7 +56,6 @@ export default function SignupScreen() {
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [code, setCode] = useState('');
   
   const [firstName, setFirstName] = useState('');
   const [middleName, setMiddleName] = useState('');
@@ -84,12 +82,10 @@ export default function SignupScreen() {
         if (!hasMinLength) return 'Min 8 chars';
         if (!hasSpecialChar) return 'Needs special char';
       } else if (step === 2) {
-        if (!code || code.length < 6) return 'Code too short';
-      } else if (step === 3) {
         if (!firstName.trim() || firstName.trim().length < 2) return 'FN error';
         if (!lastName.trim() || lastName.trim().length < 2) return 'LN error';
         if (!blockLot.trim()) return 'BL error';
-      } else if (step === 4) {
+      } else if (step === 3) {
         if (!location) return 'Loc error';
       }
       return '';
@@ -98,7 +94,7 @@ export default function SignupScreen() {
     const validationError = validate();
     setIsStepValid(validationError === '');
     if (error && validationError === '') setError('');
-  }, [email, password, code, firstName, lastName, blockLot, location, step]);
+  }, [email, password, firstName, lastName, blockLot, location, step]);
 
   const triggerShake = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -110,37 +106,21 @@ export default function SignupScreen() {
   };
 
   const handleSignup = async () => {
-    if (!isLoaded || !isStepValid) { triggerShake(); return; }
+    if (!isStepValid) { triggerShake(); return; }
     setLoading(true);
     setError('');
     try {
-      await signUp.create({ emailAddress: email.trim().toLowerCase(), password });
-      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+      const { error } = await supabase.auth.signUp({ email: email.trim().toLowerCase(), password });
+      if (error) throw error;
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Verify Account', 'A code has been sent to your email.');
       setStep(2);
-    } catch (err: any) { setError(err.errors?.[0]?.message || 'Signup failed'); triggerShake(); }
-    finally { setLoading(false); }
-  };
-
-  const handleVerifyEmail = async () => {
-    if (!isLoaded || !isStepValid) { triggerShake(); return; }
-    setLoading(true);
-    setError('');
-    try {
-      const completeSignUp = await signUp.attemptEmailAddressVerification({ code });
-      if (completeSignUp.status === 'complete') {
-        await setActive({ session: completeSignUp.createdSessionId });
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        setStep(3);
-      } else { setError('Verification failed.'); }
-    } catch (err: any) { setError(err.errors?.[0]?.message || 'Invalid code'); triggerShake(); }
+    } catch (err: any) { setError(err.message || 'Signup failed'); triggerShake(); }
     finally { setLoading(false); }
   };
 
   const handleCompleteProfile = async () => {
-    if (step === 3) {
-      if (isStepValid) setStep(4);
+    if (step === 2) {
+      if (isStepValid) setStep(3);
       else triggerShake();
       return;
     }
@@ -194,7 +174,7 @@ export default function SignupScreen() {
       </body>
       </html>
     `;
-  }, [step === 4]);
+  }, [step === 3]);
 
   const onMapMessage = async (event: any) => {
     try {
@@ -249,9 +229,8 @@ export default function SignupScreen() {
 
         <Text style={[styles.subtitle, { color: subtitleColor }]}>
           {step === 1 && 'Step 1: Account Credentials'}
-          {step === 2 && 'Step 2: Verify Email'}
-          {step === 3 && 'Step 3: Personal Information'}
-          {step === 4 && 'Step 4: Household Location'}
+          {step === 2 && 'Step 2: Personal Information'}
+          {step === 3 && 'Step 3: Household Location'}
         </Text>
 
         <Animated.View style={[styles.form, { transform: [{ translateX: shakeAnim }] }]}>
@@ -269,13 +248,6 @@ export default function SignupScreen() {
           )}
 
           {step === 2 && (
-            <View>
-              <Text style={styles.verifyInfo}>Sent to: {email}</Text>
-              <InputField label="Verification Code" placeholder="000000" keyboardType="number-pad" maxLength={6} value={code} onChangeText={setCode} autoFocus {...sharedProps} />
-            </View>
-          )}
-
-          {step === 3 && (
             <View style={{ gap: 15 }}>
               <InputField label="First Name" placeholder="John" value={firstName} onChangeText={setFirstName} {...sharedProps} />
               <InputField label="Middle Name or Initial" placeholder="Middle Name or Initial" value={middleName} onChangeText={setMiddleName} {...sharedProps} />
@@ -284,7 +256,7 @@ export default function SignupScreen() {
             </View>
           )}
 
-          {step === 4 && (
+          {step === 3 && (
             <View style={{ gap: 10 }}>
               <InputField label="Detailed Household Address" placeholder="House No., Street name, etc." value={address} onChangeText={setAddress} multiline {...sharedProps} />
               <View style={styles.mapContainer}>
@@ -301,8 +273,8 @@ export default function SignupScreen() {
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <View style={{ gap: 15, marginTop: 10 }}>
-            <TouchableOpacity style={[styles.authBtn, !isStepValid && { opacity: 0.6 }]} onPress={() => { if (step === 1) handleSignup(); else if (step === 2) handleVerifyEmail(); else handleCompleteProfile(); }} disabled={loading}>
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.authBtnText}>{step === 1 ? 'CREATE ACCOUNT' : step === 2 ? 'VERIFY CODE' : step === 3 ? 'CONTINUE' : 'FINISH SETUP'}</Text>}
+            <TouchableOpacity style={[styles.authBtn, !isStepValid && { opacity: 0.6 }]} onPress={() => { if (step === 1) handleSignup(); else handleCompleteProfile(); }} disabled={loading}>
+              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.authBtnText}>{step === 1 ? 'CREATE ACCOUNT' : step === 2 ? 'CONTINUE' : 'FINISH SETUP'}</Text>}
             </TouchableOpacity>
             <TouchableOpacity style={styles.backToLoginBtn} onPress={() => router.replace('/login')}><IconSymbol name="arrow.left" size={16} color={subtitleColor} /><Text style={[styles.backToLoginText, { color: subtitleColor }]}>Back to Sign In</Text></TouchableOpacity>
           </View>

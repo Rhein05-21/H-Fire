@@ -47,6 +47,7 @@ export default {
       "expo-router",
       "expo-updates",
       "expo-notifications",
+      "@react-native-community/datetimepicker",
       [
         "expo-splash-screen",
         {
@@ -67,8 +68,7 @@ export default {
     "extra": {
       "eas": {
         "projectId": "0d1a5ce6-68ef-487a-9efe-25a61a61f8b2"
-      },
-      "clerkProxyUrl": "https://valued-vulture-7.clerk.accounts.dev"
+      }
     }
   }
 };

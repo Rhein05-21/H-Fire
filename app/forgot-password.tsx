@@ -17,7 +17,7 @@ import {
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
-import { useSignIn } from '@clerk/clerk-expo';
+import { supabase } from '@/utils/supabase';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -28,7 +28,6 @@ const ACCENT = '#2196F3';
 export default function ForgotPasswordScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
-  const { isLoaded, signIn, setActive } = useSignIn();
 
   const backgroundColor = useThemeColor({}, 'background');
   const textColor = useThemeColor({}, 'text');
@@ -76,7 +75,6 @@ export default function ForgotPasswordScreen() {
   };
 
   const handleSendCode = async () => {
-    if (!isLoaded) return;
     if (!isStepValid) {
       setError('Please enter a valid email address');
       triggerShake();
@@ -85,15 +83,13 @@ export default function ForgotPasswordScreen() {
     setLoading(true);
     setError('');
     try {
-      await signIn.create({
-        strategy: "reset_password_email_code",
-        identifier: email.trim().toLowerCase(),
-      });
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase());
+      if (error) throw error;
       setStep(2);
       Alert.alert('Code Sent', 'Check your inbox for the reset code.');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err: any) {
-      setError(err.errors?.[0]?.message || 'Failed to request reset');
+      setError(err.message || 'Failed to request reset');
       triggerShake();
     } finally {
       setLoading(false);
@@ -101,7 +97,6 @@ export default function ForgotPasswordScreen() {
   };
 
   const handleResetPassword = async () => {
-    if (!isLoaded) return;
     if (!isStepValid) {
       if (code.length < 6) setError('Please enter the 6-digit code');
       else if (password.length < 8) setError('Password must be at least 8 characters');
@@ -112,22 +107,24 @@ export default function ForgotPasswordScreen() {
     setLoading(true);
     setError('');
     try {
-      const result = await signIn.attemptFirstFactor({
-        strategy: "reset_password_email_code",
-        code,
-        password,
+      // 1. Verify OTP for recovery
+      const { error: verifyErr } = await supabase.auth.verifyOtp({
+        email: email.trim().toLowerCase(),
+        token: code,
+        type: 'recovery'
       });
-      if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId });
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert('Success', 'Password updated! You are now signed in.', [
-          { text: 'OK', onPress: () => router.replace('/(tabs)') }
-        ]);
-      } else {
-        setError('Failed to reset password.');
-      }
+      if (verifyErr) throw verifyErr;
+
+      // 2. Update the password for the current session (which is now set after verifyOtp)
+      const { error: updateErr } = await supabase.auth.updateUser({ password });
+      if (updateErr) throw updateErr;
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Success', 'Password updated! You are now signed in.', [
+        { text: 'OK', onPress: () => router.replace('/(tabs)') }
+      ]);
     } catch (err: any) {
-      setError(err.errors?.[0]?.message || 'Invalid or expired code');
+      setError(err.message || 'Invalid or expired code');
       triggerShake();
     } finally {
       setLoading(false);

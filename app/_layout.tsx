@@ -20,17 +20,7 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import * as Sentry from '@sentry/react-native';
 import * as Notifications from 'expo-notifications';
 import { Audio } from 'expo-av';
-import { ClerkProvider, ClerkLoaded } from '@clerk/clerk-expo';
-import { tokenCache } from '@/utils/cache';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-
-const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
-
-if (!publishableKey) {
-  throw new Error(
-    'Missing Publishable Key. Please set EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY in your .env',
-  );
-}
 
 Sentry.init({
   dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
@@ -253,17 +243,13 @@ const styles = StyleSheet.create({
 function RootLayout() {
   return (
     <ErrorBoundary>
-      <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
-        <ClerkLoaded>
-          <SafeAreaProvider>
-            <ThemeProvider>
-              <UserProvider>
-                <RootLayoutContent />
-              </UserProvider>
-            </ThemeProvider>
-          </SafeAreaProvider>
-        </ClerkLoaded>
-      </ClerkProvider>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <UserProvider>
+            <RootLayoutContent />
+          </UserProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
     </ErrorBoundary>
   );
 }

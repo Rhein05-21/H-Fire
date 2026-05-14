@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, TextInput, Modal, FlatList, ActivityIndicator, Dimensions, RefreshControl, Platform, Image } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, TextInput, Modal, FlatList, ActivityIndicator, Dimensions, RefreshControl, Platform, Image, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -35,19 +35,29 @@ export default function GasDashboard() {
 
   const [labels, setLabels] = useState<Record<string, string>>({});
   const [internetConnected, setInternetConnected] = useState<boolean | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // Modal State
+  const [editingMac, setEditingMac] = useState<string | null>(null);
+  const [tempLabel, setTempLabel] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  // 1. LOAD LABELS ON MOUNT
+  // 1. LOAD LABELS
   useEffect(() => {
     AsyncStorage.getItem('HFIRE_DEVICE_LABELS').then(stored => {
       if (stored) setLabels(JSON.parse(stored));
     });
   }, []);
 
-  const [editingMac, setEditingMac] = useState<string | null>(null);
-  // ... rest of state unchanged
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refreshProfile();
+    setRefreshing(false);
+  }, [refreshProfile]);
 
   const saveLabel = async () => {
     if (editingMac) {
+      setLoading(true);
       try {
         // 1. Sync with Supabase
         const { error } = await supabase
@@ -70,6 +80,8 @@ export default function GasDashboard() {
       } catch (e) {
         console.error('Rename failed:', e);
         Alert.alert('Error', 'Failed to update label in database.');
+      } finally {
+        setLoading(false);
       }
     }
   };
@@ -166,74 +178,12 @@ export default function GasDashboard() {
             <TextInput style={[styles.modalInput, { backgroundColor: borderColor, color: textColor }]} value={tempLabel} onChangeText={setTempLabel} autoFocus />
             <View style={styles.modalActions}>
               <TouchableOpacity onPress={() => setEditingMac(null)}><Text style={{ color: secondaryText, fontWeight: '700' }}>Cancel</Text></TouchableOpacity>
-              <TouchableOpacity onPress={saveLabel} style={styles.modalSave}><Text style={{ color: '#fff', fontWeight: '900' }}>Save</Text></TouchableOpacity>
+              <TouchableOpacity onPress={saveLabel} style={styles.modalSave}>
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '900' }}>Save</Text>}
+              </TouchableOpacity>
             </View>
           </View>
         </View>
-      </Modal>
-      {/* Onboarding Modal */}
-      <Modal visible={showOnboarding} animationType="slide">
-        <SafeAreaView style={{ flex: 1, backgroundColor: containerBg }}>
-          <View style={styles.onboardingContainer}>
-            <View style={styles.onboardingHeader}>
-              <View style={styles.logoCircle}>
-                <Image 
-                  source={require('@/assets/images/h-fire_logo.png')} 
-                  style={{ width: 120, height: 120, borderRadius: 60 }}
-                  resizeMode="contain"
-                />
-              </View>
-              <Text style={[styles.onboardingTitle, { color: textColor }]}>Welcome to H-Fire</Text>
-              <Text style={[styles.onboardingSub, { color: secondaryText }]}>
-                {onboardingStep === 1 
-                  ? 'We need a few permissions to keep you safe.' 
-                  : 'Tell us a bit about your home.'}
-              </Text>
-            </View>
-
-            {onboardingStep === 1 ? (
-              <View style={styles.permList}>
-                <View style={styles.permItem}>
-                  <IconSymbol name="bell.fill" size={24} color="#2196F3" />
-                  <View style={{ marginLeft: 15, flex: 1 }}>
-                    <Text style={[styles.permTitle, { color: textColor }]}>Emergency Alerts</Text>
-                    <Text style={[styles.permDesc, { color: secondaryText }]}>Receive critical sirens even if the app is closed.</Text>
-                  </View>
-                </View>
-                <View style={styles.permItem}>
-                  <IconSymbol name="location.fill" size={24} color="#34C759" />
-                  <View style={{ marginLeft: 15, flex: 1 }}>
-                    <Text style={[styles.permTitle, { color: textColor }]}>Precise Location</Text>
-                    <Text style={[styles.permDesc, { color: secondaryText }]}>Help responders find your exact house on the map.</Text>
-                  </View>
-                </View>
-                <TouchableOpacity style={styles.onboardBtn} onPress={handleStartOnboarding}>
-                  <Text style={styles.onboardBtnText}>Allow Permissions</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={styles.formSection}>
-                <TextInput 
-                  style={[styles.modalInput, { backgroundColor: borderColor, color: textColor }]} 
-                  placeholder="Full Name" 
-                  placeholderTextColor="#999"
-                  value={setupName}
-                  onChangeText={setSetupName}
-                />
-                <TextInput 
-                  style={[styles.modalInput, { backgroundColor: borderColor, color: textColor }]} 
-                  placeholder="Community Name (e.g. Greenview)" 
-                  placeholderTextColor="#999"
-                  value={setupCommunity}
-                  onChangeText={setSetupCommunity}
-                />
-                <TouchableOpacity style={styles.onboardBtn} onPress={completeOnboarding}>
-                  <Text style={styles.onboardBtnText}>Get Started</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </SafeAreaView>
       </Modal>
     </View>
   );
@@ -241,18 +191,6 @@ export default function GasDashboard() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  onboardingContainer: { flex: 1, padding: 30, justifyContent: 'center' },
-  onboardingHeader: { alignItems: 'center', marginBottom: 50 },
-  logoCircle: { width: 120, height: 120, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-  onboardingTitle: { fontSize: 32, fontWeight: '900', textAlign: 'center' },
-  onboardingSub: { fontSize: 16, textAlign: 'center', marginTop: 10, lineHeight: 22 },
-  permList: { gap: 25 },
-  permItem: { flexDirection: 'row', alignItems: 'center' },
-  permTitle: { fontSize: 18, fontWeight: '800' },
-  permDesc: { fontSize: 14, marginTop: 2 },
-  onboardBtn: { backgroundColor: '#2196F3', padding: 20, borderRadius: 20, alignItems: 'center', marginTop: 30 },
-  onboardBtnText: { color: '#fff', fontSize: 16, fontWeight: '900' },
-  formSection: { gap: 15 },
   heroHeader: { paddingHorizontal: 25, paddingTop: 60, paddingBottom: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   brandText: { color: '#2196F3', fontSize: 10, fontWeight: '900', letterSpacing: 2 },
   welcomeText: { fontSize: 28, fontWeight: '900', marginTop: 4 },
