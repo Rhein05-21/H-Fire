@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Fire/Gas Leak Monitoring",
-    "slug": "h-fireresidentmonitor",
+    "slug": "h-fireresidentmonitoring",
     "owner": "hfiremaker",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -14,22 +14,26 @@
     },
     "android": {
       "package": "com.tigle.hfire",
+      "versionCode": 2,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#121212",
-        "foregroundImage": "./assets/images/h-fire_logo.png",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": [
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_DATA_SYNC",
+        "WAKE_LOCK",
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE"
       ],
       "config": {
         "googleMaps": {
-          "apiKey": "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY"
+          "apiKey": "AIzaSyC43FblIwS4qhG0t1ss4fLRDot-NNp7-WU"
         }
       }
     },
@@ -67,7 +71,8 @@
     "extra": {
       "eas": {
         "projectId": "0d1a5ce6-68ef-487a-9efe-25a61a61f8b2"
-      }
+      },
+      "clerkProxyUrl": "https://valued-vulture-7.clerk.accounts.dev"
     }
   }
 }

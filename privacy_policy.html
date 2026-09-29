@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy - H-Fire</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 32px 20px;
+      background-color: #fcfcfc;
+    }
+    .header {
+      border-bottom: 2px solid #e2e8f0;
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+    h1 {
+      color: #1a202c;
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+    .badge {
+      display: inline-block;
+      background-color: #e53e3e;
+      color: white;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .date {
+      color: #718096;
+      font-size: 14px;
+      margin-top: 8px;
+    }
+    h2 {
+      color: #2d3748;
+      font-size: 20px;
+      margin-top: 28px;
+      margin-bottom: 12px;
+    }
+    p, ul {
+      margin-bottom: 14px;
+    }
+    ul {
+      padding-left: 24px;
+    }
+    li {
+      margin-bottom: 6px;
+    }
+    .highlight-box {
+      background-color: #fffaf0;
+      border-left: 4px solid #dd6b20;
+      padding: 16px;
+      border-radius: 6px;
+      margin: 20px 0;
+    }
+    .contact-box {
+      background-color: #ebf8ff;
+      border-left: 4px solid #3182ce;
+      padding: 16px;
+      border-radius: 6px;
+      margin: 20px 0;
+    }
+    a {
+      color: #3182ce;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <span class="badge">H-Fire</span>
+    <h1>Privacy Policy for H-Fire (Resident Monitor)</h1>
+    <p class="date">Last Updated: April 09, 2026</p>
+  </div>
+
+  <h2>1. Introduction</h2>
+  <p>H-Fire ("we," "our," or "us") provides a Fire and Gas Leak Monitoring System. This Privacy Policy explains how we collect, use, disclose, and protect your information when you use our mobile application.</p>
+
+  <h2>2. Information We Collect</h2>
+  <p>To provide accurate safety monitoring and emergency response dispatch, we collect the following Personally Identifiable Information (PII):</p>
+  <ul>
+    <li><strong>Account Information:</strong> Email address, Full Name (First, Middle, and Last Name) via authentication providers.</li>
+    <li><strong>Location Data:</strong> Geographic Location (Latitude and Longitude) and detailed Household Address / Community / Block & Lot information. This is strictly required to locate the household during fire or hazardous gas leak events.</li>
+    <li><strong>Device & Telemetry Data:</strong> Sensor unit telemetry (Gas PPM levels, flame detection states, node battery/connection health).</li>
+    <li><strong>Identifiers:</strong> Unique User ID (userId) and Expo push notification device tokens.</li>
+  </ul>
+
+  <h2>3. How We Use Your Information</h2>
+  <p>The collected information is used strictly for safety and life-saving monitoring purposes:</p>
+  <ul>
+    <li><strong>Account Authentication:</strong> Securely authenticate and maintain user accounts.</li>
+    <li><strong>Emergency Monitoring & Alerts:</strong> Track gas and smoke concentrations in real time and send high-priority push notifications and alarm sirens during dangerous conditions.</li>
+    <li><strong>Emergency Response Dispatch:</strong> Allow designated administrators and first responders to pinpoint the exact location of active hazards.</li>
+  </ul>
+
+  <h2>4. Third-Party Services</h2>
+  <p>We work with trusted third-party providers to power core functionality:</p>
+  <ul>
+    <li><strong>Clerk:</strong> Secure user authentication and session management.</li>
+    <li><strong>Supabase:</strong> Secure cloud database storage with row-level security (RLS) for profile and incident records.</li>
+    <li><strong>HiveMQ:</strong> MQTT cloud broker for real-time IoT hardware communication.</li>
+    <li><strong>Expo & Firebase Cloud Messaging (FCM):</strong> Real-time push notification delivery for emergency alarms.</li>
+  </ul>
+
+  <h2>5. Data Retention and Security</h2>
+  <p>We implement industry-standard encryption (TLS/HTTPS, secure WebSockets) to protect your data in transit and at rest. Your household location and profile data are stored securely and accessible only by authorized administrators during active hazard events.</p>
+
+  <div class="highlight-box">
+    <h2 style="margin-top: 0; font-size: 18px;">6. Data Deletion Instructions</h2>
+    <p>Users have the right to request the permanent deletion of their account and all associated personal data at any time:</p>
+    <ul>
+      <li>Send an email to: <a href="mailto:hfire.iotsyste@gmail.com">hfire.iotsyste@gmail.com</a></li>
+      <li>Subject line: <strong>"H-Fire Data Deletion Request"</strong></li>
+      <li>Include your registered email address in the body of the message.</li>
+    </ul>
+    <p>Upon receiving your request, we will permanently delete your user profile, location data, and credentials within 48 hours.</p>
+  </div>
+
+  <div class="contact-box">
+    <h2 style="margin-top: 0; font-size: 18px;">7. Contact Us</h2>
+    <p>If you have any questions, concerns, or feedback regarding this Privacy Policy, please contact us:</p>
+    <p><strong>Email:</strong> <a href="mailto:hfire.iotsyste@gmail.com">hfire.iotsyste@gmail.com</a></p>
+  </div>
+
+</body>
+</html>

@@ -13,6 +13,7 @@ import { supabase } from '@/utils/supabase';
 import { ThemeProvider, useAppTheme } from '@/context/ThemeContext';
 import { UserProvider, useUser } from '@/context/UserContext';
 import EmergencyModal from '@/components/EmergencyModal';
+import { BackgroundGuardModal } from '@/components/BackgroundGuardModal';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { usePushNotifications } from '@/hooks/use-push-notifications';
 import { ThemedText } from '@/components/themed-text';
@@ -21,6 +22,18 @@ import * as Sentry from '@sentry/react-native';
 import * as Notifications from 'expo-notifications';
 import { Audio } from 'expo-av';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Platform } from 'react-native';
+
+// CONFIGURE NOTIFICATION BEHAVIOR AT MODULE ROOT FOR EXPO GO & STANDALONE
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  } as any),
+});
 
 Sentry.init({
   dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
@@ -42,14 +55,15 @@ function ProtectedLayout() {
     if (loading) return;
 
     const inAuthGroup = segments[0] === 'login' || segments[0] === 'signup' || segments[0] === 'forgot-password';
+    const isProfileComplete = Boolean(userDetails && userDetails.name && userDetails.block_lot);
 
     if (!isAuthenticated && !inAuthGroup) {
       router.replace('/login');
     } else if (isAuthenticated && inAuthGroup) {
-      if (userDetails) {
+      if (isProfileComplete) {
         router.replace('/(tabs)');
       }
-    } else if (isAuthenticated && !inAuthGroup && !userDetails) {
+    } else if (isAuthenticated && !inAuthGroup && !isProfileComplete) {
       router.replace('/login');
     }
   }, [isAuthenticated, loading, segments, userDetails]);
@@ -59,7 +73,18 @@ function ProtectedLayout() {
 
 function RootLayoutContent() {
   const { colorScheme } = useAppTheme();
-  const { isAdmin, profileId, activeIncident, triggerEmergency, dismissEmergency, loading } = useUser();
+  const { 
+    isAuthenticated,
+    isAdmin, 
+    profileId, 
+    activeIncident, 
+    triggerEmergency, 
+    dismissEmergency, 
+    loading,
+    showGuardPrompt,
+    enableGuard,
+    dismissGuardPrompt 
+  } = useUser();
   const backgroundColor = useThemeColor({}, 'background');
   const accentColor = '#2196F3';
   
@@ -67,6 +92,43 @@ function RootLayoutContent() {
   const fadeAnim = React.useRef(new Animated.Value(1)).current;
 
   usePushNotifications(profileId);
+
+  // --- NOTIFICATIONS CHANNELS & PERMISSIONS INITIALIZATION ---
+  useEffect(() => {
+    async function initNotifications() {
+      try {
+        if (Platform.OS === 'android') {
+          // 1. Critical Alarm Channel (Max Priority with sound & vibration)
+          await Notifications.setNotificationChannelAsync('emergency-alerts', {
+            name: 'Emergency Alerts',
+            importance: Notifications.AndroidImportance.MAX,
+            vibrationPattern: [0, 500, 250, 500],
+            lightColor: '#FF3B30',
+            sound: 'default',
+            enableVibrate: true,
+            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+          });
+
+          // 2. Persistent Safety Guard Channel (Low priority, silent, keeps process alive in background)
+          await Notifications.setNotificationChannelAsync('hfire-guard', {
+            name: 'H-Fire 24/7 Safety Guard',
+            importance: Notifications.AndroidImportance.LOW,
+            enableVibrate: false,
+            showBadge: false,
+            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+          });
+        }
+
+        const { status: existingStatus } = await Notifications.getPermissionsAsync();
+        if (existingStatus !== 'granted') {
+          await Notifications.requestPermissionsAsync();
+        }
+      } catch (e) {
+        console.warn('Notification init:', e);
+      }
+    }
+    initNotifications();
+  }, []);
 
   // --- GLOBAL AUDIO CONFIGURATION ---
   useEffect(() => {
@@ -90,16 +152,16 @@ function RootLayoutContent() {
 
   // --- NOTIFICATION TAP HANDLER (for Background/Killed state) ---
   useEffect(() => {
-    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
-      const data = response.notification.request.content.data;
+    const subscription = Notifications.addNotificationResponseReceivedListener((response: any) => {
+      const data = response?.notification?.request?.content?.data as any;
       if (data?.incidentId || data?.device_mac) {
         triggerEmergency({
-          id: data.incidentId,
-          house_name: data.house_name || 'Home',
-          label: data.label || 'Unknown Room',
-          ppm: data.ppm || 0,
-          alert_type: data.alert_type || 'FIRE',
-          device_mac: data.device_mac
+          id: data.incidentId || Date.now(),
+          house_name: String(data.house_name || 'Home'),
+          label: String(data.label || 'Sensor Unit'),
+          ppm: Number(data.ppm || 0),
+          alert_type: String(data.alert_type || 'FIRE'),
+          device_mac: data.device_mac ? String(data.device_mac) : undefined,
         });
       }
     });
@@ -129,38 +191,69 @@ function RootLayoutContent() {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'incidents' },
-        async (payload) => {
+        async (payload: any) => {
           const newIncident = payload.new;
           
-          // Rely on Supabase RLS for filtering - we only get what we are allowed to see.
-          // For safety, still check if it's Active and belongs to the user (if not admin)
           if (newIncident.status !== 'Active') return;
-          if (!isAdmin && newIncident.profile_id && newIncident.profile_id !== profileId) return;
 
           try {
-            const { data: device } = await supabase
-              .from('devices')
-              .select('house_name, label')
-              .eq('mac', newIncident.device_mac)
-              .single();
+            const { data: dev } = await supabase.from('devices').select('profile_id, house_name, label').eq('mac', newIncident.device_mac).maybeSingle();
+            if (!isAdmin && (newIncident.profile_id || dev?.profile_id) !== profileId) return;
+
+            const houseName = dev?.house_name || 'Emergency House';
+            const label = dev?.label || 'Sensor Unit';
+            const alertType = newIncident.alert_type || 'FIRE';
+            const ppm = newIncident.ppm_at_trigger || 0;
 
             triggerEmergency({
               id: newIncident.id,
-              house_name: device?.house_name || 'Emergency House',
-              label: device?.label || 'Emergency Unit',
-              ppm: newIncident.ppm_at_trigger || 0,
-              alert_type: newIncident.alert_type as any,
-              device_mac: newIncident.device_mac
+              house_name: houseName,
+              label: label,
+              ppm,
+              alert_type: alertType as any,
+              device_mac: newIncident.device_mac,
+              status: 'Active',
+            });
+
+            // 2. Dispatch Local Heads-Up System Notification Banner immediately
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: `🔥 CRITICAL HAZARD: ${alertType}`,
+                body: `EMERGENCY at ${houseName} (${label})! Gas/Smoke level: ${ppm} PPM. Tap to open emergency siren & contact family.`,
+                sound: 'default',
+                priority: Notifications.AndroidNotificationPriority.MAX,
+                vibrate: [0, 500, 250, 500],
+                channelId: 'emergency-alerts',
+                data: {
+                  incidentId: newIncident.id,
+                  house_name: houseName,
+                  label: label,
+                  ppm,
+                  alert_type: alertType,
+                  device_mac: newIncident.device_mac,
+                },
+              } as any,
+              trigger: null,
             });
           } catch (err) {
             console.error('Error handling new incident:', err);
           }
         }
       )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'incidents' },
+        (payload: any) => {
+          const updated = payload.new;
+          if (updated.status === 'Resolved') {
+            dismissEmergency();
+          }
+        }
+      )
       .subscribe();
       
     return () => { supabase.removeChannel(channel); };
-  }, [isAdmin, profileId, triggerEmergency]);
+  }, [isAdmin, profileId, triggerEmergency, dismissEmergency]);
 
   useEffect(() => {
     if (!loading) {
@@ -196,8 +289,14 @@ function RootLayoutContent() {
         onClose={dismissEmergency} 
       />
 
-      {/* Global Theme-Aware Loading Overlay (only if splash is gone) */}
-      {loading && !splashVisible && (
+      <BackgroundGuardModal
+        visible={showGuardPrompt}
+        onEnable={enableGuard}
+        onDismiss={dismissGuardPrompt}
+      />
+
+      {/* Global Theme-Aware Loading Overlay (only during initial cold start if splash is gone) */}
+      {loading && !splashVisible && !isAuthenticated && (
         <View style={[StyleSheet.absoluteFill, { backgroundColor, justifyContent: 'center', alignItems: 'center', zIndex: 9998 }]}>
           <ActivityIndicator size="large" color={accentColor} />
         </View>

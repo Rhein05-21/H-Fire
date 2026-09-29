@@ -86,12 +86,12 @@ export default function LoginScreen() {
       if (userDetails && userDetails.name && userDetails.block_lot) {
         console.log('[Login] Profile complete, navigating to tabs');
         router.replace('/(tabs)');
-      } else {
+      } else if (!isProfilePending) {
         console.log('[Login] Profile incomplete, showing setup form');
         setIsProfilePending(true);
       }
     }
-  }, [isAuthenticated, userDetails, contextLoading]);
+  }, [isAuthenticated, userDetails, contextLoading, isProfilePending]);
 
   const validateFirstName = (text: string) => {
     const cleaned = text.replace(/[0-9]/g, '');
@@ -354,20 +354,7 @@ export default function LoginScreen() {
 
           {!isProfilePending && (
             <>
-              <View style={styles.orRow}>
-                <View style={styles.orLine} />
-                <Text style={[styles.orText, { color: subtitleColor }]}>OR</Text>
-                <View style={styles.orLine} />
-              </View>
 
-              <TouchableOpacity style={styles.socialBtn} onPress={handleSocialLogin} disabled={loading}>
-                {loading ? <ActivityIndicator color={textColor} /> : (
-                  <>
-                    <FontAwesome name="google" size={20} color={textColor} />
-                    <Text style={[styles.socialText, { color: textColor }]}>Continue with Google</Text>
-                  </>
-                )}
-              </TouchableOpacity>
 
               <TouchableOpacity style={styles.signupToggle} onPress={() => router.push('/signup')}>
                 <Text style={[styles.toggleBtnText, { color: subtitleColor }]}>

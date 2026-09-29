@@ -12,7 +12,15 @@ types
 types/*
 .vscode
 .vscode/*
+conductor
+conductor/*
+scripts
+scripts/*
 *.log
+*.txt
+*.sql
+*.ino
+*.md
 .git
 .gitignore
 .easignore

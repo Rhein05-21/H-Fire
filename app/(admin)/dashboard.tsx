@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { StyleSheet, View, Text, FlatList, ActivityIndicator, Dimensions, TouchableOpacity, Modal, Platform } from 'react-native';
+import React, { useEffect, useState, useMemo } from 'react';
+import { StyleSheet, View, Text, FlatList, ActivityIndicator, TouchableOpacity, Modal, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import MapView, { Marker, PROVIDER_GOOGLE } from '@/components/Map';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,8 +9,6 @@ import { useAppTheme } from '@/context/ThemeContext';
 import { getStatusColor } from '@/constants/thresholds';
 import { useUser } from '@/context/UserContext';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-
-const { width, height } = Dimensions.get('window');
 
 const getStatusData = (ppm: number, isInactive: boolean) => {
   if (isInactive) return { color: '#9E9E9E', label: 'OFFLINE', level: 0 };
@@ -30,11 +28,38 @@ export default function AdminDashboard() {
 
   const [dbDevices, setDbDevices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // ... (rest of states)
+  const [selectedDevice, setSelectedDevice] = useState<any | null>(null);
+  const [showMap, setShowMap] = useState(false);
 
   const refreshData = async () => {
-    // ... logic remains same
+    try {
+      const [{ data: devData }, { data: profData }] = await Promise.all([
+        supabase.from('devices').select('*'),
+        supabase.from('profiles').select('*')
+      ]);
+
+      if (devData) {
+        const mapped = devData.map(d => {
+          const prof = profData?.find(p => p.id === d.profile_id);
+          return {
+            mac: d.mac,
+            house_name: d.house_name || 'Community Household',
+            label: d.label || 'Sensor Unit',
+            community: d.block_lot || prof?.block_lot || 'Community',
+            owner_name: prof?.name || 'Resident',
+            latitude: d.latitude || prof?.latitude,
+            longitude: d.longitude || prof?.longitude,
+            lastSeen: d.last_seen ? new Date(d.last_seen) : null,
+            ppm: d.current_ppm || 0,
+          };
+        });
+        setDbDevices(mapped);
+      }
+    } catch (e) {
+      console.warn('Admin refresh error:', e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -44,7 +69,6 @@ export default function AdminDashboard() {
   }, []);
 
   const finalDisplayList = useMemo(() => {
-    // ... logic remains same
     return dbDevices.map(dbDev => {
       const liveUpdate = liveMqttData[dbDev.mac];
       const currentPpm = liveUpdate ? liveUpdate.ppm : dbDev.ppm;
@@ -78,7 +102,7 @@ export default function AdminDashboard() {
     >
       <View style={[styles.statusIndicator, { backgroundColor: item.uiColor }]} />
       <View style={{ flex: 1, paddingLeft: 15 }}>
-        <Text style={[styles.communityText, { color: '#2196F3' }]}>{item.community.toUpperCase()}</Text>
+        <Text style={[styles.communityText, { color: '#2196F3' }]}>{(item.community || 'COMMUNITY').toUpperCase()}</Text>
         <Text style={[styles.houseName, { color: textColor }]}>{item.house_name}</Text>
         <Text style={[styles.ownerName, { color: secondaryText }]}>{item.owner_name || 'No Owner'} • {item.label}</Text>
         <View style={styles.badgeRow}>
@@ -108,11 +132,11 @@ export default function AdminDashboard() {
         <Text style={[styles.ppmValue, { color: item.uiColor }]}>{item.isInactive ? '--' : item.ppm}</Text>
         <Text style={styles.ppmUnit}>PPM</Text>
       </View>
-      {item.latitude && (
+      {item.latitude ? (
         <View style={styles.mapIcon}>
           <IconSymbol name="map.fill" size={14} color={secondaryText} />
         </View>
-      )}
+      ) : null}
     </TouchableOpacity>
   );
 
@@ -213,6 +237,9 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 25, paddingVertical: 20 },
   headerSub: { color: '#2196F3', fontSize: 10, fontWeight: '900', letterSpacing: 2 },
   headerTitle: { fontSize: 28, fontWeight: '900', marginTop: 2 },
+  connBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
+  dot: { width: 6, height: 6, borderRadius: 3, marginRight: 6 },
+  connText: { fontSize: 10, fontWeight: '900' },
   statsBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(52, 199, 89, 0.15)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
   statsText: { color: '#34C759', fontSize: 10, fontWeight: '900', marginLeft: 6 },
   pulseDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#34C759' },

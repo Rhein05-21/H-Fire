@@ -9,7 +9,7 @@ import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 
@@ -23,7 +23,21 @@ export default function SettingsScreen() {
   const router = useRouter();
   const systemColorScheme = useColorScheme();
   const { theme, setTheme } = useAppTheme();
-  const { userDetails, profileId, isAdmin, devices: globalDevices, allHeardDevices, refreshProfile, signOut, updateProfile } = useUser();
+  const { 
+    userDetails, 
+    profileId, 
+    isAdmin, 
+    devices: globalDevices, 
+    allHeardDevices, 
+    refreshProfile, 
+    signOut, 
+    updateProfile,
+    isGuardEnabled,
+    enableGuard,
+    disableGuard,
+    autoSmsEnabled,
+    toggleAutoSms
+  } = useUser();
   
   const backgroundColor = useThemeColor({}, 'background');
   const textColor = useThemeColor({}, 'text');
@@ -354,6 +368,70 @@ export default function SettingsScreen() {
               <TouchableOpacity style={[styles.saveBtn, (!hasChanges || firstNameError !== '' || lastNameError !== '') && { opacity: 0.6 }]} onPress={handleSave} disabled={saving}>
                 {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save Changes</Text>}
               </TouchableOpacity>
+            </View>
+
+            {/* 24/7 Safety Guard Monitoring Toggle Section */}
+            <View style={[styles.section, { backgroundColor: cardBg }]}>
+              <Text style={styles.sectionLabel}>BACKGROUND SAFETY GUARD</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                <View style={{ flex: 1, marginRight: 12 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '800', color: textColor, marginBottom: 2 }}>
+                    24/7 Safety Guard
+                  </Text>
+                  <Text style={{ fontSize: 12, color: secondaryText, lineHeight: 16 }}>
+                    Monitors gas & fire in the background with a live notification tray widget.
+                  </Text>
+                </View>
+                <Switch
+                  value={isGuardEnabled}
+                  onValueChange={(val) => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    if (val) {
+                      enableGuard();
+                    } else {
+                      disableGuard();
+                    }
+                  }}
+                  trackColor={{ false: '#767577', true: '#34C759' }}
+                  thumbColor="#ffffff"
+                />
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 6 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isGuardEnabled ? '#34C759' : '#8E8E93' }} />
+                <Text style={{ fontSize: 11, fontWeight: '700', color: isGuardEnabled ? '#34C759' : secondaryText }}>
+                  {isGuardEnabled ? 'Active (Continuous Telemetry & Lock-Screen Protection)' : 'Disabled (Alerts Only When App Is Open)'}
+                </Text>
+              </View>
+            </View>
+
+            {/* Automated Emergency SMS Toggle Section */}
+            <View style={[styles.section, { backgroundColor: cardBg }]}>
+              <Text style={styles.sectionLabel}>EMERGENCY SMS DISPATCH</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                <View style={{ flex: 1, marginRight: 12 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '800', color: textColor, marginBottom: 2 }}>
+                    Auto-SMS on Danger
+                  </Text>
+                  <Text style={{ fontSize: 12, color: secondaryText, lineHeight: 16 }}>
+                    Automatically texts all registered family members & community hotline during a fire or critical gas leak.
+                  </Text>
+                </View>
+                <Switch
+                  value={autoSmsEnabled}
+                  onValueChange={(val) => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    toggleAutoSms(val);
+                  }}
+                  trackColor={{ false: '#767577', true: '#FF3B30' }}
+                  thumbColor="#ffffff"
+                />
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 6 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: autoSmsEnabled ? '#FF3B30' : '#8E8E93' }} />
+                <Text style={{ fontSize: 11, fontWeight: '700', color: autoSmsEnabled ? '#FF3B30' : secondaryText }}>
+                  {autoSmsEnabled ? 'Active (All Household Contacts & Hotline Notified via SMS)' : 'Disabled (No SMS Sent on Alarm)'}
+                </Text>
+              </View>
             </View>
 
             <View style={[styles.section, { backgroundColor: cardBg }]}>

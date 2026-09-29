@@ -47,7 +47,7 @@ const MAPPING = {
   'exclamationmark.shield.fill': 'security',
   'cpu': 'memory',
   'calendar.badge.clock': 'event-note',
-} as IconMapping;
+} as unknown as IconMapping;
 
 /**
  * An icon component that uses native SF Symbols on iOS, and Material Icons on Android and web.
