@@ -50,6 +50,9 @@ export interface DispatchEmergencySmsParams {
   alertType: string;
   ppm: number;
   flame?: boolean;
+  latitude?: number | null;
+  longitude?: number | null;
+  address?: string | null;
 }
 
 export interface DispatchEmergencySmsResult {
@@ -72,6 +75,9 @@ export async function dispatchAutomatedEmergencySms({
   alertType,
   ppm,
   flame = false,
+  latitude,
+  longitude,
+  address,
 }: DispatchEmergencySmsParams): Promise<DispatchEmergencySmsResult> {
   const apiKey = 
     process.env.EXPO_PUBLIC_HTTPSMS_API_KEY || 
@@ -92,11 +98,21 @@ export async function dispatchAutomatedEmergencySms({
   const flameText = flame ? 'FLAME CONFIRMED' : 'HIGH GAS/SMOKE';
   const alertHeader = flame || ppm > 1500 ? 'FIRE EMERGENCY' : 'CRITICAL GAS / SMOKE LEAK';
 
+  let locationLines = '';
+  if (address) {
+    locationLines += `\nAddress: ${address}`;
+  }
+  if (latitude && longitude) {
+    locationLines += `\nMap: https://maps.google.com/?q=${latitude},${longitude}`;
+  } else if (address) {
+    locationLines += `\nMap: https://maps.google.com/?q=${encodeURIComponent(address)}`;
+  }
+
   const messageContent = 
 `[H-FIRE EMERGENCY ALERT]
 ${alertHeader}!
-Resident: ${houseName}
-Location Unit: ${nodeLabel}
+Resident: ${houseName}${locationLines}
+Unit: ${nodeLabel}
 Hazard Level: ${ppm} PPM (${flameText})
 Time: ${timestampStr}
 Immediate emergency assistance requested!`;

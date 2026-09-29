@@ -51,6 +51,11 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
   const [savedHotline, setSavedHotline] = useState<string>(ADMIN_CONTACT);
   const [savedHotlineName, setSavedHotlineName] = useState<string>('System Administrator');
   const [sendingSms, setSendingSms] = useState(false);
+  const [incidentLocation, setIncidentLocation] = useState<{
+    latitude?: number | null;
+    longitude?: number | null;
+    address?: string | null;
+  }>({});
 
   // REAL-TIME STATUS & COLOR ANIMATION
   const isFire = useMemo(() => {
@@ -107,8 +112,26 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
             }
             setLoadingContacts(false);
           });
+
+        // Also fetch profile coordinates/address for accurate Google Maps location
+        supabase
+          .from('profiles')
+          .select('latitude, longitude, address, block_lot')
+          .eq('id', targetProfileId)
+          .maybeSingle()
+          .then(({ data: pLoc }) => {
+            if (pLoc) {
+              const fullAddr = [pLoc.block_lot, pLoc.address].filter(Boolean).join(', ');
+              setIncidentLocation({
+                latitude: pLoc.latitude,
+                longitude: pLoc.longitude,
+                address: fullAddr || undefined,
+              });
+            }
+          });
       } else {
         setFamilyMembers([]);
+        setIncidentLocation({});
         setLoadingContacts(false);
       }
 
@@ -178,6 +201,11 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
     }
   };
 
+  // Resolve accurate coordinates & address
+  const activeLatitude = incidentLocation.latitude ?? userDetails?.latitude ?? null;
+  const activeLongitude = incidentLocation.longitude ?? userDetails?.longitude ?? null;
+  const activeAddress = incidentLocation.address || [userDetails?.block_lot, userDetails?.address].filter(Boolean).join(', ') || null;
+
   // Construct Emergency SMS Message
   const constructEmergencyMessage = () => {
     const timestampStr = new Date().toLocaleTimeString('en-US', {
@@ -188,11 +216,21 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
     const alertLabel = isFire ? 'FIRE EMERGENCY' : 'CRITICAL GAS / SMOKE LEAK';
     const flameText = isFire ? 'FLAME CONFIRMED' : 'HIGH GAS LEVEL';
 
+    let locationLines = '';
+    if (activeAddress) {
+      locationLines += `\nAddress: ${activeAddress}`;
+    }
+    if (activeLatitude && activeLongitude) {
+      locationLines += `\nMap: https://maps.google.com/?q=${activeLatitude},${activeLongitude}`;
+    } else if (activeAddress) {
+      locationLines += `\nMap: https://maps.google.com/?q=${encodeURIComponent(activeAddress)}`;
+    }
+
     return `[H-FIRE EMERGENCY ALERT]
 ${alertLabel}!
-Location: ${incident.house_name}
+Resident: ${incident.house_name}${locationLines}
 Unit: ${incident.label}
-Hazard: ${livePpm} PPM (${flameText})
+Hazard Level: ${livePpm} PPM (${flameText})
 Time: ${timestampStr}
 Immediate emergency assistance requested!`;
   };
@@ -219,6 +257,9 @@ Immediate emergency assistance requested!`;
         alertType: incident.alert_type || (isFire ? 'FIRE' : 'GAS / SMOKE LEAK'),
         ppm: livePpm,
         flame: isFire,
+        latitude: activeLatitude,
+        longitude: activeLongitude,
+        address: activeAddress,
       });
 
       setSendingSms(false);
@@ -301,6 +342,9 @@ Immediate emergency assistance requested!`;
         alertType: incident.alert_type || (isFire ? 'FIRE' : 'GAS / SMOKE LEAK'),
         ppm: livePpm,
         flame: isFire,
+        latitude: activeLatitude,
+        longitude: activeLongitude,
+        address: activeAddress,
       });
 
       setSendingSms(false);
