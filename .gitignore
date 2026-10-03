@@ -46,3 +46,6 @@ app-example
 log.txt
 build_error_raw.log
 *-firebase-adminsdk-*.json
+.idea/
+*.iml
+
