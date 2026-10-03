@@ -20,6 +20,9 @@ export default {
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tigle.hfire",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      },
       "config": {
         "googleMapsApiKey": process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY
       }
