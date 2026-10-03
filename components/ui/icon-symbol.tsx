@@ -47,6 +47,15 @@ const MAPPING = {
   'exclamationmark.shield.fill': 'security',
   'cpu': 'memory',
   'calendar.badge.clock': 'event-note',
+  'magnifyingglass': 'search',
+  'questionmark.circle.fill': 'help',
+  'book.fill': 'menu-book',
+  'chevron.down': 'keyboard-arrow-down',
+  'chevron.up': 'keyboard-arrow-up',
+  'location.fill': 'my-location',
+  'arrow.left.square.fill': 'exit-to-app',
+  'map.fill': 'map',
+  'plus.circle.fill': 'add-circle',
 } as unknown as IconMapping;
 
 /**

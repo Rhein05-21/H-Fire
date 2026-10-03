@@ -17,6 +17,63 @@ const { width } = Dimensions.get('window');
 const HOA_PIN = '1111';
 const SYSTEM_ADMIN_PIN = '2222';
 
+const FAQS = [
+  {
+    id: 1,
+    category: 'ALERTS',
+    q: 'What do the alert status colors mean?',
+    a: '• NORMAL (Green, ≤ 450 PPM): Safe clean air.\n• WARNING (Yellow, 451–1500 PPM): Trace combustible gas detected. Check your stove, valves, and ventilate the room.\n• DANGER (Red, > 1500 PPM or Flame): High risk of fire or explosion. The siren sounds immediately and automated emergency protocols activate. Evacuate safely!'
+  },
+  {
+    id: 2,
+    category: 'ALERTS',
+    q: 'How does the Emergency Siren work, and can I mute it?',
+    a: 'When your device detects Danger (> 1500 PPM or active flame), the app activates a full-screen emergency siren with continuous haptics.\n\nTo mute it, tap the "Mute Siren" button on the emergency popup. Muting silences the audio on your phone while the hardware continues active safety monitoring.'
+  },
+  {
+    id: 3,
+    category: 'SMS',
+    q: 'How does Automated Emergency SMS dispatch work?',
+    a: 'When enabled under Settings, any Danger event automatically sends an SMS broadcast via httpSMS to all registered household family members and the community guard/hotline. The SMS includes your household name, exact PPM level, and timestamp.'
+  },
+  {
+    id: 4,
+    category: 'SMS',
+    q: 'Where do I add family contacts for emergency SMS?',
+    a: 'Go to Settings > Profile > "Household Members". Tap "Add Member", enter their name, relationship (e.g. Spouse, Child, Parent), and Philippine mobile number (+639... or 09...).'
+  },
+  {
+    id: 5,
+    category: 'HARDWARE',
+    q: 'Why is my device showing "Offline"?',
+    a: 'A device is marked offline if it has not sent telemetry in over 60 seconds. To resolve:\n1. Ensure the ESP32 is plugged in and receiving power.\n2. Verify your home 2.4GHz Wi-Fi is active.\n3. Make sure the unit is within Wi-Fi router range.'
+  },
+  {
+    id: 6,
+    category: 'HARDWARE',
+    q: 'How many devices can I link to my household account?',
+    a: 'Each household account can link up to 4 H-Fire sensor units (e.g. Kitchen, Living Room, Garage, Bedroom). Go to Settings > Device > "Scan for New Device" to pair an unlinked unit.'
+  },
+  {
+    id: 7,
+    category: 'ALERTS',
+    q: 'What is the 24/7 Safety Guard background monitor?',
+    a: 'The Safety Guard runs a lightweight background listener that posts a persistent lock-screen status widget on your phone. Even if you swipe the app closed, you will still receive urgent fire and gas alarms.'
+  },
+  {
+    id: 8,
+    category: 'HARDWARE',
+    q: 'How should the sensor hardware be cleaned and maintained?',
+    a: '• Keep the MQ2 gas sensor and KY-026 flame sensor free of heavy cooking grease and dust.\n• Use a soft, dry cloth or compressed air to clean the sensor mesh.\n• Never submerge the device in water or spray aerosol directly onto the sensor elements.'
+  },
+  {
+    id: 9,
+    category: 'ALERTS',
+    q: 'Who should I contact during an actual fire or gas emergency?',
+    a: '1. Evacuate everyone from the household immediately.\n2. Call 911 or your local Bureau of Fire Protection (BFP) hotline.\n3. Do not turn electrical switches on or off during a gas leak.'
+  }
+];
+
 type SettingsTab = 'PROFILE' | 'DEVICE' | 'ADMIN';
 
 export default function SettingsScreen() {
@@ -69,8 +126,22 @@ export default function SettingsScreen() {
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showNoChangesModal, setShowNoChangesModal] = useState(false);
+  const [showFaqModal, setShowFaqModal] = useState(false);
+  const [showManualModal, setShowManualModal] = useState(false);
+  const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+  const [faqSearch, setFaqSearch] = useState('');
+  const [faqCategory, setFaqCategory] = useState<'ALL' | 'ALERTS' | 'SMS' | 'HARDWARE'>('ALL');
   const [pinInput, setPinInput] = useState('');
   const [loadingGps, setLoadingGps] = useState(false);
+
+  const filteredFaqs = useMemo(() => {
+    return FAQS.filter(item => {
+      const matchCat = faqCategory === 'ALL' || item.category === faqCategory;
+      const searchLower = faqSearch.trim().toLowerCase();
+      const matchSearch = !searchLower || item.q.toLowerCase().includes(searchLower) || item.a.toLowerCase().includes(searchLower);
+      return matchCat && matchSearch;
+    });
+  }, [faqSearch, faqCategory]);
 
   const hasChanges = useMemo(() => {
     if (!userDetails) return false;
@@ -444,6 +515,45 @@ export default function SettingsScreen() {
                 ))}
               </View>
             </View>
+
+            {/* SUPPORT & USER GUIDE SECTION */}
+            <View style={[styles.section, { backgroundColor: cardBg }]}>
+              <Text style={styles.sectionLabel}>SUPPORT & USER GUIDE</Text>
+              
+              <TouchableOpacity 
+                style={[styles.menuRowBtn, { backgroundColor: inputBg }]} 
+                onPress={() => {
+                  setShowFaqModal(true);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+              >
+                <View style={[styles.menuRowIconBg, { backgroundColor: 'rgba(33, 150, 243, 0.12)' }]}>
+                  <IconSymbol name="questionmark.circle.fill" size={20} color="#2196F3" />
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={[styles.menuRowTitle, { color: textColor }]}>Frequently Asked Questions (FAQ)</Text>
+                  <Text style={[styles.menuRowSubtitle, { color: secondaryText }]}>Answers for sirens, SMS, alarms, and offline units</Text>
+                </View>
+                <IconSymbol name="chevron.right" size={14} color={secondaryText} />
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.menuRowBtn, { backgroundColor: inputBg, marginTop: 10 }]} 
+                onPress={() => {
+                  setShowManualModal(true);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+              >
+                <View style={[styles.menuRowIconBg, { backgroundColor: 'rgba(52, 199, 89, 0.12)' }]}>
+                  <IconSymbol name="book.fill" size={20} color="#34C759" />
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={[styles.menuRowTitle, { color: textColor }]}>Resident User Manual</Text>
+                  <Text style={[styles.menuRowSubtitle, { color: secondaryText }]}>Complete quick-start guide and safety protocols</Text>
+                </View>
+                <IconSymbol name="chevron.right" size={14} color={secondaryText} />
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
@@ -479,6 +589,21 @@ export default function SettingsScreen() {
                   ))}
                 </View>
               )}
+            </View>
+          </View>
+        )}
+
+        {activeTab === 'ADMIN' && (
+          <View>
+            <View style={[styles.section, { backgroundColor: cardBg }]}>
+              <Text style={styles.sectionLabel}>ADMIN SECURITY ACCESS</Text>
+              <Text style={{ color: secondaryText, fontSize: 13, marginBottom: 16, lineHeight: 18 }}>
+                Enter HOA Administrator or System Admin PIN to access community-wide monitoring, command center, and broadcast sirens.
+              </Text>
+              <TouchableOpacity style={styles.adminEntryBtn} onPress={() => setShowPinModal(true)}>
+                <IconSymbol name="exclamationmark.shield.fill" size={20} color="#fff" />
+                <Text style={styles.adminEntryText}>Enter Admin Portal</Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -540,6 +665,237 @@ export default function SettingsScreen() {
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* ADMIN PIN MODAL */}
+      <Modal visible={showPinModal} transparent animationType="fade">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.pinOverlay}>
+          <View style={[styles.pinCard, { backgroundColor: cardBg }]}>
+            <Text style={[styles.pinTitle, { color: textColor }]}>Enter Security PIN</Text>
+            <TextInput
+              style={[styles.pinInput, { backgroundColor: inputBg, color: textColor }]}
+              value={pinInput}
+              onChangeText={setPinInput}
+              keyboardType="number-pad"
+              maxLength={4}
+              secureTextEntry
+              placeholder="••••"
+              placeholderTextColor={placeholderColor}
+            />
+            <View style={styles.pinActions}>
+              <TouchableOpacity onPress={() => { setShowPinModal(false); setPinInput(''); }}>
+                <Text style={{ color: secondaryText, fontWeight: '700' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.pinVerify} onPress={verifyPin}>
+                <Text style={{ color: '#fff', fontWeight: '900' }}>Verify</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* HELP & FAQS MODAL */}
+      <Modal visible={showFaqModal} animationType="slide">
+        <SafeAreaView style={[styles.fullModalContainer, { backgroundColor }]} edges={['top', 'bottom']}>
+          <View style={[styles.fullModalHeader, { borderBottomColor: 'rgba(150,150,150,0.15)' }]}>
+            <TouchableOpacity 
+              style={styles.fullModalCloseBtn} 
+              onPress={() => {
+                setShowFaqModal(false);
+                setFaqSearch('');
+                setExpandedFaq(null);
+              }}
+            >
+              <IconSymbol name="chevron.left" size={20} color="#2196F3" />
+              <Text style={styles.fullModalCloseText}>Settings</Text>
+            </TouchableOpacity>
+            <Text style={[styles.fullModalTitle, { color: textColor }]}>Help & FAQs</Text>
+            <View style={{ width: 60 }} />
+          </View>
+
+          <ScrollView 
+            contentContainerStyle={styles.fullModalContent} 
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Search Input */}
+            <View style={[styles.faqSearchBox, { backgroundColor: inputBg }]}>
+              <IconSymbol name="magnifyingglass" size={18} color={secondaryText} />
+              <TextInput
+                style={[styles.faqSearchInput, { color: textColor }]}
+                placeholder="Search FAQs (siren, offline, SMS, gas levels)..."
+                placeholderTextColor={placeholderColor}
+                value={faqSearch}
+                onChangeText={setFaqSearch}
+                clearButtonMode="while-editing"
+              />
+              {faqSearch.length > 0 && (
+                <TouchableOpacity onPress={() => setFaqSearch('')}>
+                  <IconSymbol name="xmark.circle.fill" size={16} color={secondaryText} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Category Filter Chips */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+              <View style={styles.faqCategoryRow}>
+                {(['ALL', 'ALERTS', 'SMS', 'HARDWARE'] as const).map((cat) => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[
+                      styles.faqChip,
+                      faqCategory === cat && styles.faqChipActive
+                    ]}
+                    onPress={() => {
+                      setFaqCategory(cat);
+                      Haptics.selectionAsync();
+                    }}
+                  >
+                    <Text style={[styles.faqChipText, faqCategory === cat && styles.faqChipTextActive]}>
+                      {cat === 'ALL' ? 'All Questions' : cat === 'ALERTS' ? 'Alerts & Siren' : cat === 'SMS' ? 'Emergency SMS' : 'Hardware & Wi-Fi'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+
+            {/* Accordion FAQ Items */}
+            {filteredFaqs.map((faq) => {
+              const isExpanded = expandedFaq === faq.id;
+              return (
+                <View key={faq.id} style={[styles.faqCard, { backgroundColor: cardBg }]}>
+                  <TouchableOpacity
+                    style={styles.faqQuestionRow}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setExpandedFaq(isExpanded ? null : faq.id);
+                    }}
+                  >
+                    <View style={styles.faqQuestionContent}>
+                      <View style={[styles.faqBadge, { backgroundColor: faq.category === 'ALERTS' ? 'rgba(255, 59, 48, 0.12)' : faq.category === 'SMS' ? 'rgba(33, 150, 243, 0.12)' : 'rgba(52, 199, 89, 0.12)' }]}>
+                        <Text style={[styles.faqBadgeText, { color: faq.category === 'ALERTS' ? '#FF3B30' : faq.category === 'SMS' ? '#2196F3' : '#34C759' }]}>
+                          {faq.category}
+                        </Text>
+                      </View>
+                      <Text style={[styles.faqQuestionText, { color: textColor }]}>
+                        {faq.q}
+                      </Text>
+                    </View>
+                    <IconSymbol 
+                      name={isExpanded ? 'chevron.up' : 'chevron.down'} 
+                      size={18} 
+                      color={secondaryText} 
+                    />
+                  </TouchableOpacity>
+
+                  {isExpanded && (
+                    <View style={styles.faqAnswerContainer}>
+                      <Text style={[styles.faqAnswerText, { color: textColor }]}>
+                        {faq.a}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+
+            {filteredFaqs.length === 0 && (
+              <View style={styles.emptyFaq}>
+                <IconSymbol name="exclamationmark.magnifyingglass" size={40} color={secondaryText} />
+                <Text style={[styles.emptyFaqTitle, { color: textColor }]}>No Results Found</Text>
+                <Text style={[styles.emptyFaqText, { color: secondaryText }]}>
+                  Try searching for keywords like "siren", "offline", "SMS", "gas", or "power".
+                </Text>
+              </View>
+            )}
+
+            {/* Quick Emergency Notice */}
+            <View style={styles.faqEmergencyCard}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <IconSymbol name="flame.fill" size={18} color="#FF3B30" />
+                <Text style={styles.faqEmergencyTitle}>Fire Emergency Protocol</Text>
+              </View>
+              <Text style={styles.faqEmergencyBody}>
+                If you smell gas or see flames, evacuate immediately. Do not use electrical switches. Dial 911 (BFP Hotline) from a safe distance outside.
+              </Text>
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* USER MANUAL MODAL */}
+      <Modal visible={showManualModal} animationType="slide">
+        <SafeAreaView style={[styles.fullModalContainer, { backgroundColor }]} edges={['top', 'bottom']}>
+          <View style={[styles.fullModalHeader, { borderBottomColor: 'rgba(150,150,150,0.15)' }]}>
+            <TouchableOpacity 
+              style={styles.fullModalCloseBtn} 
+              onPress={() => setShowManualModal(false)}
+            >
+              <IconSymbol name="chevron.left" size={20} color="#2196F3" />
+              <Text style={styles.fullModalCloseText}>Settings</Text>
+            </TouchableOpacity>
+            <Text style={[styles.fullModalTitle, { color: textColor }]}>Resident User Manual</Text>
+            <View style={{ width: 60 }} />
+          </View>
+
+          <ScrollView contentContainerStyle={styles.fullModalContent} showsVerticalScrollIndicator={false}>
+            <View style={[styles.section, { backgroundColor: cardBg }]}>
+              <Text style={styles.manualChapterTitle}>1. System Overview</Text>
+              <Text style={[styles.manualText, { color: textColor }]}>
+                H-Fire is an integrated IoT fire and gas safety system connecting your home sensor hardware (ESP32, MQ2 Gas Sensor, KY-026 Flame Sensor) to your mobile phone via HiveMQ MQTT and Supabase Realtime.
+              </Text>
+            </View>
+
+            <View style={[styles.section, { backgroundColor: cardBg }]}>
+              <Text style={styles.manualChapterTitle}>2. PPM Thresholds & Status</Text>
+              <View style={styles.manualThresholdRow}>
+                <View style={[styles.manualStatusDot, { backgroundColor: '#34C759' }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.manualStatusName, { color: textColor }]}>NORMAL (0 – 450 PPM)</Text>
+                  <Text style={[styles.manualStatusDesc, { color: secondaryText }]}>Safe ambient air. Standard residential background level.</Text>
+                </View>
+              </View>
+              <View style={styles.manualThresholdRow}>
+                <View style={[styles.manualStatusDot, { backgroundColor: '#FF9500' }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.manualStatusName, { color: textColor }]}>WARNING (451 – 1500 PPM)</Text>
+                  <Text style={[styles.manualStatusDesc, { color: secondaryText }]}>Trace combustible gas detected. Ventilate kitchen and check LPG valves.</Text>
+                </View>
+              </View>
+              <View style={styles.manualThresholdRow}>
+                <View style={[styles.manualStatusDot, { backgroundColor: '#FF3B30' }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.manualStatusName, { color: textColor }]}>DANGER ({'>'} 1500 PPM or Flame)</Text>
+                  <Text style={[styles.manualStatusDesc, { color: secondaryText }]}>Lethal explosion / fire risk. Siren activates, Auto-SMS dispatches, evacuate now.</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={[styles.section, { backgroundColor: cardBg }]}>
+              <Text style={styles.manualChapterTitle}>3. Emergency Alarms & Mute</Text>
+              <Text style={[styles.manualText, { color: textColor }]}>
+                When an alarm triggers, your device sounds a high-pitch siren with continuous vibration. Tap "Mute Siren" on the screen to silence audio. The app will continue monitoring the sensor until PPM drops back to safe levels.
+              </Text>
+            </View>
+
+            <View style={[styles.section, { backgroundColor: cardBg }]}>
+              <Text style={styles.manualChapterTitle}>4. Automated SMS Gateway</Text>
+              <Text style={[styles.manualText, { color: textColor }]}>
+                Ensure "Emergency SMS Dispatch" is switched ON under Settings. Register your family members in "Household Members". In Danger events, automated SMS messages with your location and sensor reading are dispatched instantly.
+              </Text>
+            </View>
+
+            <View style={[styles.section, { backgroundColor: cardBg }]}>
+              <Text style={styles.manualChapterTitle}>5. Hardware Maintenance</Text>
+              <Text style={[styles.manualText, { color: textColor }]}>
+                • Allow 24 hours of initial burn-in when first powering on a new MQ2 sensor.{'\n'}
+                • Keep the unit away from direct water splashes or heavy grease.{'\n'}
+                • Clean outer sensor mesh with a soft brush or compressed air monthly.
+              </Text>
+            </View>
+          </ScrollView>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
@@ -605,5 +961,49 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 22, fontWeight: '900', marginBottom: 10 },
   modalMessage: { fontSize: 15, fontWeight: '600', textAlign: 'center', marginBottom: 25 },
   modalActions: { flexDirection: 'row', gap: 12, width: '100%' },
-  modalBtn: { flex: 1, paddingVertical: 16, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(128,128,128,0.1)' }
+  modalBtn: { flex: 1, paddingVertical: 16, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(128,128,128,0.1)' },
+
+  menuRowBtn: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 14 },
+  menuRowIconBg: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  menuRowTitle: { fontSize: 14, fontWeight: '800' },
+  menuRowSubtitle: { fontSize: 11, fontWeight: '600', marginTop: 2 },
+
+  fullModalContainer: { flex: 1 },
+  fullModalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1 },
+  fullModalCloseBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
+  fullModalCloseText: { color: '#2196F3', fontSize: 15, fontWeight: '700', marginLeft: 2 },
+  fullModalTitle: { fontSize: 17, fontWeight: '900' },
+  fullModalContent: { padding: 20, paddingBottom: 60 },
+
+  faqSearchBox: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, borderRadius: 14, gap: 10, marginBottom: 14 },
+  faqSearchInput: { flex: 1, fontSize: 14, fontWeight: '600' },
+  faqCategoryRow: { flexDirection: 'row', gap: 8 },
+  faqChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: 'rgba(150,150,150,0.12)' },
+  faqChipActive: { backgroundColor: '#2196F3' },
+  faqChipText: { fontSize: 12, fontWeight: '800', color: '#8E8E93' },
+  faqChipTextActive: { color: '#ffffff', fontWeight: '900' },
+
+  faqCard: { borderRadius: 18, marginBottom: 10, padding: 16, overflow: 'hidden' },
+  faqQuestionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  faqQuestionContent: { flex: 1, marginRight: 10 },
+  faqBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginBottom: 6 },
+  faqBadgeText: { fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
+  faqQuestionText: { fontSize: 14, fontWeight: '800', lineHeight: 18 },
+  faqAnswerContainer: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(150,150,150,0.12)' },
+  faqAnswerText: { fontSize: 13, lineHeight: 19, fontWeight: '500' },
+
+  emptyFaq: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
+  emptyFaqTitle: { fontSize: 16, fontWeight: '800', marginTop: 12 },
+  emptyFaqText: { fontSize: 12, textAlign: 'center', marginTop: 6, paddingHorizontal: 30 },
+
+  faqEmergencyCard: { backgroundColor: 'rgba(255, 59, 48, 0.08)', borderColor: '#FF3B30', borderWidth: 1, borderRadius: 16, padding: 16, marginTop: 16 },
+  faqEmergencyTitle: { fontSize: 13, fontWeight: '900', color: '#FF3B30' },
+  faqEmergencyBody: { fontSize: 12, fontWeight: '600', color: '#FF3B30', lineHeight: 17 },
+
+  manualChapterTitle: { fontSize: 16, fontWeight: '900', color: '#2196F3', marginBottom: 8 },
+  manualText: { fontSize: 13, lineHeight: 19, fontWeight: '600' },
+  manualThresholdRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 12 },
+  manualStatusDot: { width: 12, height: 12, borderRadius: 6, marginTop: 3 },
+  manualStatusName: { fontSize: 13, fontWeight: '800' },
+  manualStatusDesc: { fontSize: 11, fontWeight: '600', marginTop: 2 },
 });
