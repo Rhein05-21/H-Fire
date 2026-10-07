@@ -383,7 +383,6 @@ if (HIVEMQ_URL) {
 
         return;
       }
-      }
 
       // Array format
       if (Array.isArray(data)) {
@@ -434,6 +433,6 @@ server.on('error', (e) => {
   }
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 Healthcheck listening on port ${PORT}`);
 });
