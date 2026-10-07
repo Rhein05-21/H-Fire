@@ -803,40 +803,77 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   // Supabase Realtime Subscriptions & Polling
   useEffect(() => {
-    // Periodic refresh
+    // Gentle fallback refresh (60 seconds instead of 4 seconds to protect Disk I/O)
     const interval = setInterval(() => {
       if (profileId) refreshProfile();
-    }, 4000);
+    }, 60000);
 
     const channel = supabase
-      .channel('resident-sync-feed')
+      .channel('telemetry-feed')
+      // 1. Supabase Realtime Broadcast: In-Memory WebSockets (Zero Disk I/O)
+      .on('broadcast', { event: 'telemetry' }, ({ payload }: { payload: any }) => {
+        if (!payload) return;
+        const mac = String(payload.mac || '').toUpperCase().replace(/-/g, ':');
+        const ppm = Number(payload.ppm ?? 0);
+        const flame = Boolean(payload.flame);
+        
+        latestTelemetryMapRef.current[mac] = { ppm, flame, timestamp: Date.now() };
+
+        setAllHeardDevices(prev => ({
+          ...prev,
+          [mac]: {
+            id: mac,
+            mac,
+            ppm,
+            flame,
+            status: getStatusFromPPM(ppm, flame, true),
+            label: payload.label || prev[mac]?.label || `Device ${mac.slice(-4)}`,
+            houseId: payload.house_name || prev[mac]?.houseId || 'Home',
+            lastSeen: new Date(payload.timestamp || Date.now()),
+          }
+        }));
+
+        if (payload.N2_Gas !== undefined || payload.n2_gas !== undefined) {
+          const n2Ppm = Number(payload.N2_Gas ?? payload.n2_gas ?? 0);
+          const n2Flame = Boolean(Number(payload.N2_Fire ?? payload.n2_fire ?? 0) === 1 || payload.N2_Fire === true);
+          const n2Status = n2Ppm > 1500 || n2Flame ? 'Danger' : (n2Ppm > 450 ? 'Warning' : 'Normal');
+          setSecondaryNodes(prev => ({
+            ...prev,
+            N2: {
+              ...prev.N2,
+              ppm: n2Ppm,
+              flame: n2Flame,
+              status: n2Status,
+              last_seen: payload.timestamp || new Date().toISOString(),
+            }
+          }));
+        }
+
+        if (payload.N3_Gas !== undefined || payload.n3_gas !== undefined) {
+          const n3Ppm = Number(payload.N3_Gas ?? payload.n3_gas ?? 0);
+          const n3Flame = Boolean(Number(payload.N3_Fire ?? payload.n3_fire ?? 0) === 1 || payload.N3_Fire === true);
+          const n3Status = n3Ppm > 1500 || n3Flame ? 'Danger' : (n3Ppm > 450 ? 'Warning' : 'Normal');
+          setSecondaryNodes(prev => ({
+            ...prev,
+            N3: {
+              ...prev.N3,
+              ppm: n3Ppm,
+              flame: n3Flame,
+              status: n3Status,
+              last_seen: payload.timestamp || new Date().toISOString(),
+            }
+          }));
+        }
+      })
+      .on('broadcast', { event: 'heartbeat' }, ({ payload }: { payload: any }) => {
+        if (payload?.timestamp) {
+          setBridgeHeartbeat(new Date(payload.timestamp));
+        }
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, (payload: any) => {
         const updated = payload.new as any;
         if (updated?.key === 'bridge_heartbeat') {
           setBridgeHeartbeat(new Date(updated.value));
-        } else if (updated?.key?.startsWith('telemetry_')) {
-          try {
-            const parsed = JSON.parse(updated.value);
-            const mac = String(parsed.mac || updated.key.replace(/^telemetry_/i, '')).toUpperCase().replace(/-/g, ':');
-            const ppm = Number(parsed.ppm ?? 0);
-            const flame = Boolean(parsed.flame);
-            
-            latestTelemetryMapRef.current[mac] = { ppm, flame, timestamp: Date.now() };
-
-            setAllHeardDevices(prev => ({
-              ...prev,
-              [mac]: {
-                id: mac,
-                mac,
-                ppm,
-                flame,
-                status: getStatusFromPPM(ppm, flame, true),
-                label: prev[mac]?.label || `Device ${mac.slice(-4)}`,
-                houseId: prev[mac]?.houseId || 'Home',
-                lastSeen: new Date(),
-              }
-            }));
-          } catch {}
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'devices' }, (payload: any) => {

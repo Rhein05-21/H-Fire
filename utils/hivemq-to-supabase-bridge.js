@@ -26,8 +26,31 @@ console.log('🚀 Starting H-Fire Resident Telemetry Bridge...');
 console.log('📡 Broker:', process.env.EXPO_PUBLIC_HIVEMQ_BROKER);
 console.log('🎯 Topic Subscription:', TOPIC_WILDCARD);
 
-// 1. Heartbeat updater to app_settings
+// Supabase Realtime Broadcast Channel (In-Memory WebSockets, Zero Disk I/O)
+const telemetryBroadcastChannel = supabase.channel('telemetry-feed');
+telemetryBroadcastChannel.subscribe((status) => {
+  if (status === 'SUBSCRIBED') {
+    console.log('⚡ Supabase Realtime Broadcast channel [telemetry-feed] connected (Zero Disk I/O)!');
+  }
+});
+
+// In-Memory Device & Rate Limit Caches (to protect Supabase Disk I/O budget)
+const deviceCache = new Map(); // mac -> { data, cachedAt }
+const lastDeviceUpsertMap = new Map(); // mac -> timestamp
+const lastGasLogMap = new Map(); // mac -> timestamp
+
+// 1. Heartbeat updater: Broadcasts via WebSocket every 15s; writes to DB only every 5 minutes
 if (supabaseUrl && !supabaseUrl.includes('placeholder')) {
+  // Rapid in-memory heartbeat broadcast (Zero Disk I/O)
+  setInterval(() => {
+    telemetryBroadcastChannel.send({
+      type: 'broadcast',
+      event: 'heartbeat',
+      payload: { timestamp: new Date().toISOString(), status: 'online' },
+    }).catch(() => {});
+  }, 15000);
+
+  // Throttled database persistence (Once every 5 minutes to protect Disk I/O)
   setInterval(async () => {
     try {
       await supabase.from('app_settings').upsert({ 
@@ -36,9 +59,9 @@ if (supabaseUrl && !supabaseUrl.includes('placeholder')) {
         updated_at: new Date().toISOString() 
       }, { onConflict: 'key' });
     } catch (e) {
-      console.warn('Heartbeat update warning:', e.message);
+      console.warn('Heartbeat DB update warning:', e.message);
     }
-  }, 30000);
+  }, 300000);
 }
 
 // 2. Broadcast Emergency Push Notifications
@@ -136,26 +159,43 @@ async function processTelemetryItem(data, topic, timestamp) {
   const ppm = Number(data.ppm ?? data.ppm_level ?? data.gas ?? data.smoke ?? data.reading ?? 0);
   const flame = data.flame === true || data.flame === 1 || data.flameDetected === true || data.fire === true || data.fire === 1;
 
-  // Retrieve device record
-  const { data: dev } = await supabase
-    .from('devices')
-    .select('profile_id, house_name, label, block_lot')
-    .eq('mac', mac)
-    .maybeSingle();
+  // 1. In-Memory Cached Device Record lookup (caches for 5 mins to eliminate per-packet DB reads)
+  const now = Date.now();
+  let dev = null;
+  const cachedDev = deviceCache.get(mac);
+  if (cachedDev && (now - cachedDev.cachedAt < 300000)) {
+    dev = cachedDev.data;
+  } else {
+    try {
+      const { data: dbDev } = await supabase
+        .from('devices')
+        .select('profile_id, house_name, label, block_lot')
+        .eq('mac', mac)
+        .maybeSingle();
+      dev = dbDev;
+      deviceCache.set(mac, { data: dbDev, cachedAt: now });
+    } catch (e) {
+      console.warn('Device lookup warning:', e.message);
+    }
+  }
 
   let profileId = dev?.profile_id || null;
   let houseName = dev?.house_name || data.house_name || `H-Fire Node (${mac.slice(-5)})`;
 
-  // Update devices table last_seen (DO NOT auto-link unregistered devices to arbitrary resident profiles)
-  await supabase.from('devices').upsert({
-    mac,
-    last_seen: timestamp,
-    label: dev?.label || data.label || `Device ${mac.slice(-4)}`,
-    house_name: houseName,
-    profile_id: profileId,
-  }, { onConflict: 'mac' });
+  // 2. Update devices table last_seen (THROTTLED: Only once every 5 minutes per device to protect Disk I/O)
+  const lastDeviceUpsert = lastDeviceUpsertMap.get(mac) || 0;
+  if (!dev || (now - lastDeviceUpsert > 300000)) {
+    lastDeviceUpsertMap.set(mac, now);
+    supabase.from('devices').upsert({
+      mac,
+      last_seen: timestamp,
+      label: dev?.label || data.label || `Device ${mac.slice(-4)}`,
+      house_name: houseName,
+      profile_id: profileId,
+    }, { onConflict: 'mac' }).then(() => {}).catch(() => {});
+  }
 
-  // Evaluate Status
+  // 3. Evaluate Status
   let status = 'Normal';
   let alertType = 'NONE';
   if (ppm > 1500 || flame) {
@@ -166,23 +206,44 @@ async function processTelemetryItem(data, topic, timestamp) {
     alertType = 'GAS / SMOKE LEAK';
   }
 
-  // 1. Insert into gas_logs ONLY IF Warning or Danger (Never spam normal ambient logs)
+  // 4. Log to gas_logs ONLY IF Warning or Danger (THROTTLED: at most once every 15s per device to protect Disk I/O)
   if (status === 'Warning' || status === 'Danger') {
-    await supabase.from('gas_logs').insert([{
-      device_mac: mac,
-      ppm_level: ppm,
-      status,
-      profile_id: profileId,
-      created_at: timestamp,
-    }]);
+    const lastGasLog = lastGasLogMap.get(mac) || 0;
+    if (now - lastGasLog > 15000) {
+      lastGasLogMap.set(mac, now);
+      await supabase.from('gas_logs').insert([{
+        device_mac: mac,
+        ppm_level: ppm,
+        status,
+        profile_id: profileId,
+        created_at: timestamp,
+      }]);
+    }
   }
 
-  // Upsert live telemetry state to app_settings (for 0ms live dashboard streaming)
-  await supabase.from('app_settings').upsert({
-    key: `telemetry_${mac.replace(/:/g, '')}`,
-    value: JSON.stringify({ mac, ppm, flame, status, timestamp }),
-    updated_at: timestamp,
-  }, { onConflict: 'key' });
+  // 5. Broadcast live telemetry via Supabase Realtime Broadcast (ZERO DISK I/O!)
+  // Transmits directly over WebSockets in memory without writing rows to PostgreSQL disk.
+  telemetryBroadcastChannel.send({
+    type: 'broadcast',
+    event: 'telemetry',
+    payload: {
+      mac,
+      ppm,
+      flame,
+      status,
+      timestamp,
+      node_name: data.node_name || 'Core Node 1 (Main Sensor Unit)',
+      house_name: houseName,
+      label: dev?.label || data.label,
+      profile_id: profileId,
+      N1_Gas: data.N1_Gas,
+      N1_Fire: data.N1_Fire,
+      N2_Gas: data.N2_Gas,
+      N2_Fire: data.N2_Fire,
+      N3_Gas: data.N3_Gas,
+      N3_Fire: data.N3_Fire,
+    }
+  }).catch(() => {});
 
   // Handle Hazard Incidents (Both Gas Leaks & Fire Alarms with Node Labeling)
   if (status === 'Danger' || status === 'Warning') {
