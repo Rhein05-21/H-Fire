@@ -25,6 +25,82 @@
 #include <Adafruit_SSD1306.h>
 #include <esp_wifi.h>
 #include <math.h>
+#include <Preferences.h>
+
+Preferences prefs;
+
+
+// ============================================================================
+// 5B. FLASH CALIBRATION PERSISTENCE (NVS)
+// ============================================================================
+void loadCalibrationFromFlash() {
+  prefs.begin("hfire_n3", false);
+  mq2_R0 = prefs.getFloat("mq2_r0", 10.0);
+  flame_ambient_baseline = prefs.getInt("flame_base", 2800);
+  flame_trigger_delta = prefs.getInt("flame_delta", 600);
+  threshold_safe_ppm = prefs.getInt("safe_ppm", 450);
+  threshold_danger_ppm = prefs.getInt("danger_ppm", 1500);
+  prefs.end();
+  Serial.printf("[Flash] Loaded N3 Calibration: R0=%.2f, FlameBase=%d, Safe=%d, Danger=%d\n",
+                mq2_R0, flame_ambient_baseline, threshold_safe_ppm, threshold_danger_ppm);
+}
+
+void saveCalibrationToFlash() {
+  prefs.begin("hfire_n3", false);
+  prefs.putFloat("mq2_r0", mq2_R0);
+  prefs.putInt("flame_base", flame_ambient_baseline);
+  prefs.putInt("flame_delta", flame_trigger_delta);
+  prefs.putInt("safe_ppm", threshold_safe_ppm);
+  prefs.putInt("danger_ppm", threshold_danger_ppm);
+  prefs.end();
+  Serial.printf("[Flash] Saved N3 Calibration to Flash.\n");
+}
+
+float calibrateMQ2CleanAir() {
+  float totalRs = 0;
+  const int SAMPLES = 50;
+  for (int i = 0; i < SAMPLES; i++) {
+    int mv = analogReadMilliVolts(PIN_MQ2_GAS);
+    totalRs += calculateRs(mv);
+    delay(50);
+  }
+  float derivedR0 = (totalRs / (float)SAMPLES) / MQ2_RO_CLEAN_AIR_FACTOR;
+  if (derivedR0 < 1.0) derivedR0 = 1.0;
+  mq2_R0 = derivedR0;
+  return derivedR0;
+}
+
+// Downlink Reception from Core Gateway
+void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
+  if (data_len == sizeof(CommandPacket)) {
+    CommandPacket cmd;
+    memcpy(&cmd, data, sizeof(CommandPacket));
+    
+    if (cmd.command_type == 1) { // SET_THRESHOLDS
+      threshold_safe_ppm = (int)cmd.safe_ppm;
+      threshold_danger_ppm = (int)cmd.danger_ppm;
+      flame_trigger_delta = (int)cmd.flame_delta;
+      saveCalibrationToFlash();
+      Serial.printf("[N3 RX] Synced Thresholds: Safe=%d, Danger=%d, Delta=%d\n",
+                    threshold_safe_ppm, threshold_danger_ppm, flame_trigger_delta);
+    } else if (cmd.command_type == 2) { // TARE_MQ2
+      isCalibrating = true;
+      digitalWrite(PIN_BUZZER, LOW);
+      calibrateMQ2CleanAir();
+      saveCalibrationToFlash();
+      isCalibrating = false;
+      Serial.printf("[N3 RX] Tared MQ-2 R0: %.2f kOhm\n", mq2_R0);
+    } else if (cmd.command_type == 3) { // TARE_FLAME
+      flame_ambient_baseline = analogReadMilliVolts(PIN_FLAME);
+      saveCalibrationToFlash();
+      Serial.printf("[N3 RX] Tared Flame Baseline: %d mV\n", flame_ambient_baseline);
+    } else if (cmd.command_type == 4) { // SILENCE
+      silenceUntilMillis = millis() + 10000;
+      digitalWrite(PIN_BUZZER, LOW);
+      Serial.println(F("[N3 RX] Silenced local alarm for 10s."));
+    }
+  }
+}
 
 // ============================================================================
 // 1. HARDWARE PIN DEFINITIONS & OLED CONFIGURATION
@@ -40,10 +116,12 @@ const int PIN_FLAME   = 32;   // Digital In (Optical Flame Sensor)
 const int PIN_BUZZER  = 25;   // Digital Out (Piezo / Active Buzzer)
 
 // ============================================================================
-// 2. SYSTEM-WIDE TELEMETRY THRESHOLDS (Aligned with H-Fire Admin App)
+// 2. SYSTEM-WIDE TELEMETRY THRESHOLDS (Dynamic Over-The-Air Synchronized)
 // ============================================================================
-const int THRESHOLD_SAFE_PPM   = 450;    // Normal ambient baseline
-const int THRESHOLD_DANGER_PPM = 1500;   // Critical hazard threshold
+int  threshold_safe_ppm     = 450;    // Dynamic safe baseline
+int  threshold_danger_ppm   = 1500;   // Dynamic hazard threshold
+bool isCalibrating          = false;  // Calibration in-progress flag
+unsigned long silenceUntilMillis = 0; // Mute buzzer during calibration
 
 // Calibration Constants & Baseline Variables
 const float MQ2_RL_VALUE            = 5.0;     // Load resistor in k-ohms
@@ -66,8 +144,16 @@ typedef struct __attribute__((packed)) {
   uint8_t  node_id;        // Always 3 for this node
   uint16_t gas_level;      // Smoothed PPM reading
   bool     flame_status;   // true = Flame detected
-  uint32_t uptime_seconds; // Node uptime (heartbeat)
+  uint32_t uptime_seconds; // Node heartbeat counter
 } SensorPacket;
+
+// Downlink Command Packet from Core Gateway (Node 1)
+typedef struct __attribute__((packed)) {
+  uint8_t  command_type;  // 1 = SET_THRESHOLDS, 2 = TARE_MQ2, 3 = TARE_FLAME, 4 = SILENCE_BUZZER
+  uint16_t safe_ppm;
+  uint16_t danger_ppm;
+  uint16_t flame_delta;
+} CommandPacket;
 
 SensorPacket myPacket;
 esp_now_peer_info_t peerInfo;
@@ -142,6 +228,13 @@ bool readCalibratedFlame() {
 // ============================================================================
 void manageLocalBuzzer(bool isWarning, bool isDanger) {
   unsigned long now = millis();
+
+  // Calibration, warm-up (10s), or silence guard
+  if (isCalibrating || now < silenceUntilMillis || now < 10000) {
+    digitalWrite(PIN_BUZZER, LOW);
+    buzzerBeepState = false;
+    return;
+  }
 
   if (isDanger) {
     // Continuous High Alarm on Danger
@@ -268,6 +361,8 @@ void setup() {
   }
 
   esp_now_register_send_cb((esp_now_send_cb_t)OnDataSent);
+  esp_now_register_recv_cb((esp_now_recv_cb_t)OnDataRecv);
+  loadCalibrationFromFlash();
 
   // Register Core Gateway as Peer
   memcpy(peerInfo.peer_addr, coreGatewayAddress, 6);
@@ -298,8 +393,8 @@ void loop() {
     myPacket.uptime_seconds = (uint32_t)(now / 1000);
 
     // 2. Evaluate Local Hazards
-    bool isDanger  = (myPacket.flame_status || myPacket.gas_level >= THRESHOLD_DANGER_PPM);
-    bool isWarning = (!isDanger && myPacket.gas_level > THRESHOLD_SAFE_PPM);
+    bool isDanger  = (myPacket.flame_status || myPacket.gas_level >= threshold_danger_ppm);
+    bool isWarning = (!isDanger && myPacket.gas_level > threshold_safe_ppm);
     const char* statusText = isDanger ? "DANGER" : (isWarning ? "WARNING" : "SAFE");
 
     // 3. Transmit to Core Gateway via ESP-NOW

@@ -87,6 +87,44 @@ typedef struct __attribute__((packed)) {
   uint32_t uptime_seconds; // Node heartbeat counter
 } SensorPacket;
 
+// Bidirectional Configuration Command (Core Gateway -> Node 2 & Node 3)
+typedef struct __attribute__((packed)) {
+  uint8_t  command_type;  // 1 = SET_THRESHOLDS, 2 = TARE_MQ2, 3 = TARE_FLAME, 4 = SILENCE_BUZZER
+  uint16_t safe_ppm;
+  uint16_t danger_ppm;
+  uint16_t flame_delta;
+} CommandPacket;
+
+uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+uint8_t node2_mac[6] = {0};
+uint8_t node3_mac[6] = {0};
+bool node2_peer_added = false;
+bool node3_peer_added = false;
+
+void addEspNowPeerSafe(const uint8_t *mac) {
+  if (esp_now_is_peer_exist(mac)) return;
+  esp_now_peer_info_t pInfo;
+  memset(&pInfo, 0, sizeof(pInfo));
+  memcpy(pInfo.peer_addr, mac, 6);
+  pInfo.channel = 0;
+  pInfo.encrypt = false;
+  esp_now_add_peer(&pInfo);
+}
+
+void broadcastCommandToSatellites(uint8_t cmd_type) {
+  CommandPacket cmd;
+  cmd.command_type = cmd_type;
+  cmd.safe_ppm     = (uint16_t)threshold_safe_ppm;
+  cmd.danger_ppm   = (uint16_t)threshold_danger_ppm;
+  cmd.flame_delta  = (uint16_t)flame_trigger_delta;
+
+  esp_now_send(broadcastAddress, (uint8_t *)&cmd, sizeof(cmd));
+  if (node2_peer_added) esp_now_send(node2_mac, (uint8_t *)&cmd, sizeof(cmd));
+  if (node3_peer_added) esp_now_send(node3_mac, (uint8_t *)&cmd, sizeof(cmd));
+  Serial.printf("[ESP-NOW TX] Broadcasted command %d to Satellites (Safe=%d, Danger=%d, Delta=%d)\n",
+                cmd_type, threshold_safe_ppm, threshold_danger_ppm, flame_trigger_delta);
+}
+
 // In-Memory Telemetry State for Nodes 1, 2, and 3
 struct NodeState {
   int           gas;
@@ -120,11 +158,26 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
   memcpy(&packet, data, sizeof(SensorPacket));
 
   uint8_t id = packet.node_id;
-  if (id == 2 || id == 3) {
-    nodes[id].gas       = (int)packet.gas_level;
-    nodes[id].fire      = packet.flame_status;
-    nodes[id].online    = true;
-    nodes[id].last_seen = millis();
+  if (id == 2) {
+    if (!node2_peer_added) {
+      memcpy(node2_mac, mac_addr, 6);
+      addEspNowPeerSafe(node2_mac);
+      node2_peer_added = true;
+    }
+    nodes[2].gas       = (int)packet.gas_level;
+    nodes[2].fire      = packet.flame_status;
+    nodes[2].online    = true;
+    nodes[2].last_seen = millis();
+  } else if (id == 3) {
+    if (!node3_peer_added) {
+      memcpy(node3_mac, mac_addr, 6);
+      addEspNowPeerSafe(node3_mac);
+      node3_peer_added = true;
+    }
+    nodes[3].gas       = (int)packet.gas_level;
+    nodes[3].fire      = packet.flame_status;
+    nodes[3].online    = true;
+    nodes[3].last_seen = millis();
   }
 }
 
@@ -348,6 +401,7 @@ void onMqttCommand(char* topic, byte* payload, unsigned int length) {
     prefs.putFloat("mq2_r0", mq2_R0);
     prefs.end();
 
+    broadcastCommandToSatellites(2); // Tare satellites MQ2
     String ack = "{\"event\":\"CAL_SUCCESS\",\"sensor\":\"MQ2\",\"mac\":\"" + coreMacAddress + "\",\"R0\":" + String(mq2_R0, 2) + "}";
     mqttClient.publish(TOPIC_DATA, ack.c_str());
     Serial.printf("[Calibration] MQ-2 Baseline R0 saved: %.2f kOhm\n", mq2_R0);
@@ -359,6 +413,7 @@ void onMqttCommand(char* topic, byte* payload, unsigned int length) {
     prefs.putInt("flame_base", flame_ambient_baseline);
     prefs.end();
 
+    broadcastCommandToSatellites(3); // Tare satellites Flame
     String ack = "{\"event\":\"CAL_SUCCESS\",\"sensor\":\"FLAME\",\"mac\":\"" + coreMacAddress + "\",\"baseline\":" + String(flame_ambient_baseline) + "}";
     mqttClient.publish(TOPIC_DATA, ack.c_str());
     Serial.printf("[Calibration] Flame Ambient Baseline saved: %d mV\n", flame_ambient_baseline);
@@ -373,6 +428,7 @@ void onMqttCommand(char* topic, byte* payload, unsigned int length) {
         prefs.putInt("flame_delta", flame_trigger_delta);
         prefs.end();
 
+        broadcastCommandToSatellites(1); // Sync delta
         String ack = "{\"event\":\"CAL_SUCCESS\",\"sensor\":\"FLAME_DELTA\",\"mac\":\"" + coreMacAddress + "\",\"delta\":" + String(flame_trigger_delta) + "}";
         mqttClient.publish(TOPIC_DATA, ack.c_str());
         Serial.printf("[Calibration] Flame Trigger Delta updated: %d mV\n", flame_trigger_delta);
@@ -397,6 +453,7 @@ void onMqttCommand(char* topic, byte* payload, unsigned int length) {
         prefs.putInt("danger_ppm", threshold_danger_ppm);
         prefs.end();
 
+        broadcastCommandToSatellites(1); // Sync safe/danger
         String ack = "{\"event\":\"CAL_SUCCESS\",\"sensor\":\"THRESHOLDS\",\"mac\":\"" + coreMacAddress + "\",\"safe\":" + String(threshold_safe_ppm) + ",\"danger\":" + String(threshold_danger_ppm) + "}";
         mqttClient.publish(TOPIC_DATA, ack.c_str());
         Serial.printf("[Calibration] Dynamic Thresholds updated: Safe=%d, Danger=%d\n", threshold_safe_ppm, threshold_danger_ppm);
@@ -589,6 +646,7 @@ void setup() {
     Serial.println(F("Critical Error: ESP-NOW Init Failed!"));
   } else {
     esp_now_register_recv_cb((esp_now_recv_cb_t)OnDataRecv);
+  addEspNowPeerSafe(broadcastAddress);
     Serial.println(F("ESP-NOW initialized and listener registered."));
   }
 
