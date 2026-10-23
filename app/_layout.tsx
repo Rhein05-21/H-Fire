@@ -20,7 +20,7 @@ import { ThemedText } from '@/components/themed-text';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import * as Sentry from '@sentry/react-native';
 import * as Notifications from 'expo-notifications';
-import { Audio } from 'expo-av';
+import { setAudioModeAsync } from 'expo-audio';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Platform } from 'react-native';
 
@@ -134,14 +134,9 @@ function RootLayoutContent() {
   useEffect(() => {
     async function setupAudio() {
       try {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
+        await setAudioModeAsync({
+          playsInSilentMode: true,
           staysActiveInBackground: true,
-          interruptionModeIOS: 1, // DoNotMix
-          playsInSilentModeIOS: true,
-          shouldDuckAndroid: false, // Don't duck, we want full volume for alarms
-          interruptionModeAndroid: 1, // DoNotMix
-          playThroughEarpieceAndroid: false,
         });
       } catch (e) {
         console.warn('Audio setup failed', e);

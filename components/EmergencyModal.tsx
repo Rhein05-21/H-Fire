@@ -15,7 +15,7 @@ import {
   ActivityIndicator
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { Audio } from 'expo-av';
+import { createAudioPlayer, setAudioModeAsync, AudioPlayer } from 'expo-audio';
 import { IconSymbol } from './ui/icon-symbol';
 import { useUser } from '@/context/UserContext';
 import { supabase } from '@/utils/supabase';
@@ -44,7 +44,7 @@ const ADMIN_CONTACT = '09123456789';
 export default function EmergencyModal({ visible, incident, onClose }: EmergencyModalProps) {
   const { devices, profileId, userDetails, secondaryNodes } = useUser();
   const [pulseAnim] = useState(new Animated.Value(1));
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [sound, setSound] = useState<any>(null);
   const [showCallOptions, setShowCallOptions] = useState(false);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [loadingContacts, setLoadingContacts] = useState(false);
@@ -451,51 +451,43 @@ Immediate emergency assistance requested!`;
   };
 
   const currentPlayingTypeRef = React.useRef<string>('');
-  const soundRef = React.useRef<Audio.Sound | null>(null);
+  const soundRef = React.useRef<AudioPlayer | null>(null);
 
   async function playSiren(targetType?: string) {
     const effectiveType = targetType || (isFire ? 'fire' : 'smoke');
     try {
       if (!incident) return;
       if (currentPlayingTypeRef.current === effectiveType && soundRef.current) {
-        // Sound is already playing cleanly, do not restart
         return;
       }
 
-      // 1. Force robust audio settings
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        staysActiveInBackground: true,
-        interruptionModeIOS: 1, // DoNotMix
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: false,
-        interruptionModeAndroid: 1, // DoNotMix
-        playThroughEarpieceAndroid: false,
-      });
+      try {
+        await setAudioModeAsync({
+          playsInSilentMode: true,
+          staysActiveInBackground: true,
+        });
+      } catch (e) {}
 
-      // 2. Cleanup existing sound if switching types
       if (soundRef.current) {
         try {
-          await soundRef.current.stopAsync();
-          await soundRef.current.unloadAsync();
+          soundRef.current.pause();
+          soundRef.current.remove();
         } catch {}
         soundRef.current = null;
       }
 
-      // 3. Resolve Asset based on targetType
       const soundFile = effectiveType === 'fire'
         ? require('../assets/Fire Alarm.mp3') 
         : require('../assets/Smoke Alarm Sound.mp3');
 
-      // 4. Load and Play
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        soundFile,
-        { shouldPlay: true, isLooping: true, volume: 1.0, androidImplementation: 'MediaPlayer' }
-      );
-      soundRef.current = newSound;
+      const player = createAudioPlayer(soundFile);
+      player.loop = true;
+      player.volume = 1.0;
+      player.play();
+
+      soundRef.current = player;
       currentPlayingTypeRef.current = effectiveType;
-      setSound(newSound);
-      await newSound.playAsync();
+      setSound(player);
     } catch (error) { 
       console.error('Failed to play siren:', error); 
     }
@@ -505,8 +497,8 @@ Immediate emergency assistance requested!`;
     currentPlayingTypeRef.current = '';
     if (soundRef.current) {
       try {
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
+        soundRef.current.pause();
+        soundRef.current.remove();
       } catch (e) {}
       soundRef.current = null;
       setSound(null);
