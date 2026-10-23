@@ -11,7 +11,8 @@
     "lint": "expo lint",
     "bridge": "node utils/hivemq-to-supabase-bridge.js",
     "test-sms": "node scripts/test-sms.js",
-    "test-emergency": "node scripts/test-emergency-simulation.js"
+    "test-emergency": "node scripts/test-emergency-simulation.js",
+    "postinstall": "node scripts/patch-expo-notifications.js"
   },
   "dependencies": {
     "@clerk/clerk-expo": "^2.19.31",
