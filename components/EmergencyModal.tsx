@@ -19,7 +19,7 @@ import { Audio } from 'expo-av';
 import { IconSymbol } from './ui/icon-symbol';
 import { useUser } from '@/context/UserContext';
 import { supabase } from '@/utils/supabase';
-import { dispatchAutomatedEmergencySms, SmsRecipient } from '@/utils/httpsms-client';
+import { dispatchAutomatedEmergencySms, SmsRecipient } from '@/utils/fmcsms-client';
 
 const { width, height } = Dimensions.get('window');
 
@@ -42,7 +42,7 @@ const BFP_HOTLINE = '911';
 const ADMIN_CONTACT = '09123456789'; 
 
 export default function EmergencyModal({ visible, incident, onClose }: EmergencyModalProps) {
-  const { devices, profileId, userDetails } = useUser();
+  const { devices, profileId, userDetails, secondaryNodes } = useUser();
   const [pulseAnim] = useState(new Animated.Value(1));
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [showCallOptions, setShowCallOptions] = useState(false);
@@ -57,13 +57,73 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
     address?: string | null;
   }>({});
 
+  // RESOLVE TRIGGERED NODE INFO (Primary Core Node vs Secondary Node 2 vs Secondary Node 3)
+  const triggeredNode = useMemo(() => {
+    const rawLabel = String(incident?.label || incident?.node_name || '');
+    const rawNotes = String(incident?.notes || '');
+    const combined = `${rawLabel} ${rawNotes}`.toLowerCase();
+
+    // Check if secondary nodes have active hazard readings
+    const n2Ppm = secondaryNodes?.N2?.ppm || 0;
+    const n2Flame = Boolean(secondaryNodes?.N2?.flame);
+    const n2IsHazard = n2Ppm > 1500 || n2Flame;
+
+    const n3Ppm = secondaryNodes?.N3?.ppm || 0;
+    const n3Flame = Boolean(secondaryNodes?.N3?.flame);
+    const n3IsHazard = n3Ppm > 1500 || n3Flame;
+
+    if (combined.includes('secondary node 2') || combined.includes('node 2') || combined.includes('n2') || n2IsHazard) {
+      return {
+        tag: 'SECONDARY NODE 2',
+        name: 'Secondary Node 2 (Living Room)',
+        channel: 'CH: N2 (ESP-NOW MESH)',
+        code: 'N2',
+        isSecondary: true,
+      };
+    }
+
+    if (combined.includes('secondary node 3') || combined.includes('node 3') || combined.includes('n3') || n3IsHazard) {
+      return {
+        tag: 'SECONDARY NODE 3',
+        name: 'Secondary Node 3 (Sector 3 / Ext)',
+        channel: 'CH: N3 (ESP-NOW MESH)',
+        code: 'N3',
+        isSecondary: true,
+      };
+    }
+
+    if (combined.includes('core node 1') || combined.includes('node 1') || combined.includes('n1') || combined.includes('main sensor')) {
+      return {
+        tag: 'PRIMARY CORE NODE (N1)',
+        name: 'Core Node 1 (Main Sensor Unit)',
+        channel: 'CH: N1 (ESP32 GATEWAY)',
+        code: 'N1',
+        isSecondary: false,
+      };
+    }
+
+    return {
+      tag: rawLabel ? rawLabel.toUpperCase() : 'SENSOR UNIT',
+      name: rawLabel || 'Main Sensor Unit',
+      channel: incident?.device_mac ? `MAC: ${incident.device_mac.slice(-5)}` : 'Wireless Sensor',
+      code: 'N1',
+      isSecondary: false,
+    };
+  }, [incident, secondaryNodes]);
+
   // REAL-TIME STATUS & COLOR ANIMATION
   const isFire = useMemo(() => {
+    if (triggeredNode.code === 'N2') {
+      return (secondaryNodes?.N2?.ppm || 0) > 1500 || Boolean(secondaryNodes?.N2?.flame) || incident?.alert_type === 'FIRE';
+    }
+    if (triggeredNode.code === 'N3') {
+      return (secondaryNodes?.N3?.ppm || 0) > 1500 || Boolean(secondaryNodes?.N3?.flame) || incident?.alert_type === 'FIRE';
+    }
     if (!incident?.device_mac) return incident?.alert_type === 'FIRE';
     const currentDevice = devices[incident.device_mac];
     // Mirror system thresholds: > 1500 or flame detected is Danger/Fire
     return (currentDevice?.ppm || incident.ppm) > 1500 || Boolean(currentDevice?.flame) || incident?.alert_type === 'FIRE';
-  }, [devices, incident]);
+  }, [devices, incident, secondaryNodes, triggeredNode]);
 
   const [bgAnim] = useState(new Animated.Value(isFire ? 0 : 1));
 
@@ -185,10 +245,16 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
 
   // REAL-TIME PPM LOOKUP
   const livePpm = useMemo(() => {
+    if (triggeredNode.code === 'N2') {
+      return secondaryNodes?.N2?.ppm ?? incident?.ppm ?? 0;
+    }
+    if (triggeredNode.code === 'N3') {
+      return secondaryNodes?.N3?.ppm ?? incident?.ppm ?? 0;
+    }
     if (!incident?.device_mac) return incident?.ppm || 0;
     const currentDevice = devices[incident.device_mac];
-    return currentDevice ? currentDevice.ppm : incident.ppm;
-  }, [devices, incident]);
+    return currentDevice ? currentDevice.ppm : (incident.ppm || 0);
+  }, [devices, incident, secondaryNodes, triggeredNode]);
 
   const handleCallPrimary = () => {
     if (familyMembers.length > 0) {
@@ -229,7 +295,7 @@ export default function EmergencyModal({ visible, incident, onClose }: Emergency
     return `[H-FIRE EMERGENCY ALERT]
 ${alertLabel}!
 Resident: ${incident.house_name}${locationLines}
-Unit: ${incident.label}
+Triggered By: ${triggeredNode.name}
 Hazard Level: ${livePpm} PPM (${flameText})
 Time: ${timestampStr}
 Immediate emergency assistance requested!`;
@@ -253,7 +319,7 @@ Immediate emergency assistance requested!`;
         incidentId: incident.id,
         profileId,
         houseName: incident.house_name,
-        nodeLabel: incident.label,
+        nodeLabel: triggeredNode.name,
         alertType: incident.alert_type || (isFire ? 'FIRE' : 'GAS / SMOKE LEAK'),
         ppm: livePpm,
         flame: isFire,
@@ -266,12 +332,12 @@ Immediate emergency assistance requested!`;
 
       if (result.success) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert('✅ SMS Sent (httpSMS)', `Emergency alert dispatched via httpSMS to ${name} (${phone}).`);
+        Alert.alert('✅ SMS Sent', `Emergency alert dispatched to ${name} (${phone}).`);
       } else {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         Alert.alert(
-          'httpSMS Gateway Notice',
-          `${result.results[0]?.error || 'Failed to dispatch via httpSMS.'}\n\nOpen phone Messages app instead?`,
+          'SMS Gateway Notice',
+          `${result.results[0]?.error || 'Failed to dispatch emergency SMS.'}\n\nOpen phone Messages app instead?`,
           [
             { text: 'Cancel', style: 'cancel' },
             {
@@ -287,7 +353,7 @@ Immediate emergency assistance requested!`;
     }
   };
 
-  // Primary Auto SMS Action via httpSMS (Broadcast to Household & Saved Hotline)
+  // Primary Auto SMS Action via FMCSMS (Broadcast to Household & Saved Hotline)
   const handleAutoSms = async () => {
     setSendingSms(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -338,7 +404,7 @@ Immediate emergency assistance requested!`;
         incidentId: incident.id,
         profileId,
         houseName: incident.house_name,
-        nodeLabel: incident.label,
+        nodeLabel: triggeredNode.name,
         alertType: incident.alert_type || (isFire ? 'FIRE' : 'GAS / SMOKE LEAK'),
         ppm: livePpm,
         flame: isFire,
@@ -356,14 +422,14 @@ Immediate emergency assistance requested!`;
           .join('\n');
 
         Alert.alert(
-          '🚨 Auto SMS Dispatched (httpSMS)',
-          `Emergency alert successfully sent via httpSMS gateway to ${result.sentCount} recipient(s):\n\n${recipientListText}`
+          '🚨 Auto SMS Dispatched',
+          `Emergency alert successfully sent to ${result.sentCount} recipient(s):\n\n${recipientListText}`
         );
       } else {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         Alert.alert(
-          'httpSMS Gateway Notice',
-          `${result.errorMessage || 'Failed to dispatch via httpSMS.'}\n\nWould you like to send via your phone's Messages app instead?`,
+          'SMS Gateway Notice',
+          `${result.errorMessage || 'Failed to dispatch emergency SMS.'}\n\nWould you like to send via your phone's Messages app instead?`,
           [
             { text: 'Cancel', style: 'cancel' },
             {
@@ -495,7 +561,18 @@ Immediate emergency assistance requested!`;
               {isFire ? 'FIRE EMERGENCY ALERT' : 'WARNING: GAS LEAK / SMOKE DETECTED'}
             </Text>
             <Text style={styles.houseName}>{incident.house_name}</Text>
-            <Text style={styles.locationDetail}>{incident.label.toUpperCase()}</Text>
+            
+            {/* TRIGGERED BY SENSOR NODE BADGE */}
+            <View style={styles.triggeredByCard}>
+              <View style={styles.triggeredByHeader}>
+                <View style={styles.triggeredByPill}>
+                  <IconSymbol name="antenna.radiowaves.left.and.right" size={12} color="#fff" />
+                  <Text style={styles.triggeredByPillText}>TRIGGERED BY</Text>
+                </View>
+                <Text style={styles.triggeredByChannel}>{triggeredNode.channel}</Text>
+              </View>
+              <Text style={styles.triggeredByNodeName}>{triggeredNode.name}</Text>
+            </View>
             
             <View style={styles.ppmBadge}>
               <Text style={[styles.ppmValue, { color: isFire ? '#D32F2F' : '#FF9500' }]}>{livePpm} PPM</Text>
@@ -521,7 +598,7 @@ Immediate emergency assistance requested!`;
               {sendingSms ? (
                 <>
                   <ActivityIndicator color="#fff" size="small" />
-                  <Text style={styles.smsActionBtnText}>DISPATCHING AUTO SMS (httpSMS)...</Text>
+                  <Text style={styles.smsActionBtnText}>DISPATCHING AUTO SMS...</Text>
                 </>
               ) : (
                 <>
@@ -559,7 +636,7 @@ Immediate emergency assistance requested!`;
                   )}
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.broadcastTitle}>BROADCAST AUTO SMS (httpSMS)</Text>
+                  <Text style={styles.broadcastTitle}>BROADCAST AUTO SMS</Text>
                   <Text style={styles.broadcastSub}>
                     {sendingSms ? 'Sending emergency SMS to all contacts...' : 'Auto-dispatches hazard alert to all contacts'}
                   </Text>
@@ -665,6 +742,53 @@ const styles = StyleSheet.create({
   emergencyTitle: { color: '#fff', fontSize: 13, fontWeight: '900', letterSpacing: 3, marginBottom: 15, textAlign: 'center' },
   houseName: { color: '#fff', fontSize: 30, fontWeight: '900', textAlign: 'center' },
   locationDetail: { color: 'rgba(255,255,255,0.85)', fontSize: 16, fontWeight: '700', marginTop: 4, letterSpacing: 1 },
+  triggeredByCard: {
+    backgroundColor: 'rgba(0, 0, 0, 0.28)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginTop: 12,
+    marginBottom: 4,
+    width: '100%',
+    alignItems: 'center',
+  },
+  triggeredByHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 4,
+  },
+  triggeredByPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    gap: 4,
+  },
+  triggeredByPillText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  triggeredByChannel: {
+    color: 'rgba(255, 255, 255, 0.75)',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  triggeredByNodeName: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
   ppmBadge: { backgroundColor: '#fff', paddingHorizontal: 22, paddingVertical: 12, borderRadius: 18, alignItems: 'center', marginTop: 20, marginBottom: 20, elevation: 10 },
   ppmValue: { fontSize: 34, fontWeight: '900' },
   ppmLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 1 },

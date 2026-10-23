@@ -145,9 +145,29 @@ export default function LoginScreen() {
     if (!isStepValid) return triggerShake();
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
       if (error) throw error;
-    } catch (err: any) { setError('Invalid email or password'); triggerShake(); }
+
+      // Strict role check: Block Admin, HOA, and Guard accounts from Resident App
+      if (data?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role, is_admin')
+          .eq('id', data.user.id)
+          .maybeSingle();
+
+        const isOfficer = Boolean(
+          profile && (profile.is_admin === true || profile.role === 'admin' || profile.role === 'hoa' || profile.role === 'guard')
+        );
+
+        if (isOfficer) {
+          await supabase.auth.signOut();
+          setError('Access Denied: Officer and Admin accounts cannot access the Resident App. Please use the H-Fire Admin Command Center.');
+          triggerShake();
+          return;
+        }
+      }
+    } catch (err: any) { setError(err.message || 'Invalid email or password'); triggerShake(); }
     finally { setLoading(false); }
   };
 

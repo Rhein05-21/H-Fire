@@ -29,7 +29,7 @@ export default {
     },
     "android": {
       "package": "com.tigle.hfire",
-      "versionCode": 2,
+      "versionCode": 3,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#121212",

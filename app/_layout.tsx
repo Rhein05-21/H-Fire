@@ -158,10 +158,11 @@ function RootLayoutContent() {
         triggerEmergency({
           id: data.incidentId || Date.now(),
           house_name: String(data.house_name || 'Home'),
-          label: String(data.label || 'Sensor Unit'),
+          label: String(data.node_name || data.label || 'Sensor Unit'),
           ppm: Number(data.ppm || 0),
           alert_type: String(data.alert_type || 'FIRE'),
           device_mac: data.device_mac ? String(data.device_mac) : undefined,
+          node_name: data.node_name ? String(data.node_name) : undefined,
         });
       }
     });

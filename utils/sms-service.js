@@ -1,7 +1,7 @@
 /**
- * Automated Emergency SMS Service via httpSMS
+ * Automated Emergency SMS Service via FMCSMS REST API (FortMED / KBRSMS)
  * Integrates Option C (All Household Family Members) and Option B (Community Hotline)
- * Includes E.164 Normalization, Anti-Spam Cooldown, Rate Pacing, and Safe Simulation Fallback.
+ * Includes Philippine 639XXXXXXXXX Normalization, Anti-Spam Cooldown, Rate Pacing, and Safe Simulation Fallback.
  */
 
 const dotenv = require('dotenv');
@@ -12,76 +12,77 @@ const smsCooldownMap = new Map();
 const COOLDOWN_MS = 3 * 60 * 1000; // 3 minutes
 
 /**
- * Normalizes phone numbers to standard E.164 format (+639XXXXXXXXX).
+ * Normalizes phone numbers to standard Philippine format (639XXXXXXXXX).
  * Handles: '09171234567', '9171234567', '+639171234567', '639171234567', and stripped spaces/dashes.
  */
 function normalizePhoneNumber(raw) {
   if (!raw || typeof raw !== 'string') return null;
 
-  // Remove all non-digit characters except leading '+'
   let cleaned = raw.trim().replace(/[\s\-\(\)\.]/g, '');
 
   // Placeholder filter (avoid testing against dummy numbers)
-  if (cleaned.includes('XXXXXXXXX') || cleaned === '09123456789' || cleaned === '+639123456789') {
+  if (cleaned.includes('XXXXXXXXX') || cleaned === '09123456789' || cleaned === '+639123456789' || cleaned === '639123456789') {
     return null;
   }
 
-  // If starts with +63
-  if (cleaned.startsWith('+63')) {
-    if (cleaned.length === 13 && cleaned.startsWith('+639')) return cleaned;
-    return null;
+  // Strip leading '+'
+  if (cleaned.startsWith('+')) {
+    cleaned = cleaned.slice(1);
   }
 
-  // If starts with 63 without '+'
-  if (cleaned.startsWith('63')) {
-    if (cleaned.length === 12 && cleaned.startsWith('639')) return `+${cleaned}`;
-    return null;
+  // If starts with 639 (12 digits)
+  if (cleaned.startsWith('639') && cleaned.length === 12) {
+    return cleaned;
   }
 
-  // If starts with 09 (standard PH mobile)
-  if (cleaned.startsWith('09')) {
-    if (cleaned.length === 11) return `+63${cleaned.slice(1)}`;
-    return null;
+  // If starts with 09 (11 digits): replace '0' with '63'
+  if (cleaned.startsWith('09') && cleaned.length === 11) {
+    return `63${cleaned.slice(1)}`;
   }
 
-  // If starts with 9 (missing 0)
-  if (cleaned.startsWith('9')) {
-    if (cleaned.length === 10) return `+63${cleaned}`;
-    return null;
+  // If starts with 9 (10 digits): prepend '63'
+  if (cleaned.startsWith('9') && cleaned.length === 10) {
+    return `63${cleaned}`;
   }
 
   return null;
 }
 
 /**
- * Dispatches an SMS via httpSMS REST API with network timeout and error handling.
+ * Dispatches an SMS via FMCSMS REST API (FortMED / KBRSMS).
+ * Accepts: { api_key, recipient, message, sender_id }
  */
-async function sendHttpSmsMessage({ to, content, apiKey, fromNumber }) {
+async function sendFmcsmsMessage({ to, message, apiKey, senderId = 'HFIRE', apiEndpoint }) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000); // 8-second timeout
+  const timeoutId = setTimeout(() => controller.abort(), 12000); // 12-second timeout
 
   try {
-    const response = await fetch('https://api.httpsms.com/v1/messages/send', {
+    const url = apiEndpoint || process.env.FMCSMS_API_ENDPOINT || 'https://fortmed.org/web/FMCSMS/api/send.php';
+    const payload = {
+      api_key: apiKey,
+      recipient: to,
+      message,
+      sender_id: senderId,
+    };
+
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'x-api-key': apiKey,
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
       },
-      body: JSON.stringify({
-        content,
-        from: fromNumber,
-        to,
-      }),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
 
     clearTimeout(timeoutId);
     const data = await response.json().catch(() => ({}));
+    const isSuccess = response.ok && (data?.status === 'success' || data?.status === 200 || !data?.status);
 
-    if (!response.ok) {
+    if (!isSuccess) {
       return {
         success: false,
-        error: data.message || `httpSMS error ${response.status}`,
+        error: data?.message || data?.error || `FMCSMS error HTTP ${response.status}`,
       };
     }
 
@@ -89,7 +90,7 @@ async function sendHttpSmsMessage({ to, content, apiKey, fromNumber }) {
   } catch (err) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
-      return { success: false, error: 'httpSMS request timed out after 8s' };
+      return { success: false, error: 'FMCSMS request timed out after 12s' };
     }
     return { success: false, error: err.message || 'Network error' };
   }
@@ -157,7 +158,6 @@ async function sendAutomatedEmergencySms(supabase, {
     }
 
     // 4. Resolve Recipients
-    // Map of normalizedPhone -> { name, role }
     const recipientsMap = new Map();
 
     // --- RECIPIENTS (OPTION C): All Registered Household Family Members ---
@@ -246,38 +246,41 @@ Immediate response requested!`;
     // 6. Update Cooldown Timestamp
     smsCooldownMap.set(mac, now);
 
-    // 7. Check httpSMS Credentials
-    const apiKey = process.env.HTTPSMS_API_KEY;
-    const fromNumber = process.env.HTTPSMS_FROM_NUMBER;
-    const isLiveGateway = Boolean(apiKey && fromNumber);
+    // 7. Resolve FMCSMS Gateway & Credentials
+    const fmcsmsApiKey = process.env.FMCSMS_API_KEY;
+    const fmcsmsSenderId = process.env.FMCSMS_SENDER_ID || 'HFIRE';
+    const fmcsmsEndpoint = process.env.FMCSMS_API_ENDPOINT || 'https://fortmed.org/web/FMCSMS/api/send.php';
 
-    console.log(`\n📢 [SMS Gateway] Broadcasting to ${recipientsMap.size} recipient(s)... (Mode: ${isLiveGateway ? 'LIVE httpSMS' : 'SAFE SIMULATION'})`);
+    const isLiveGateway = Boolean(fmcsmsApiKey && !fmcsmsApiKey.includes('your_') && fmcsmsApiKey.length > 5);
+
+    console.log(`\n📢 [FMCSMS Gateway] Broadcasting to ${recipientsMap.size} recipient(s)... (Mode: ${isLiveGateway ? 'LIVE FMCSMS' : 'SAFE SIMULATION'})`);
 
     // 8. Dispatch to each recipient with 300ms pacing delay
     for (const [phone, info] of recipientsMap.entries()) {
       let status = 'SENT';
       let errorMessage = null;
+      let senderUsed = isLiveGateway ? fmcsmsSenderId : 'SYSTEM_SIMULATOR';
 
       if (isLiveGateway) {
-        const result = await sendHttpSmsMessage({
+        const result = await sendFmcsmsMessage({
           to: phone,
-          content: messageContent,
-          apiKey,
-          fromNumber,
+          message: messageContent,
+          apiKey: fmcsmsApiKey,
+          senderId: fmcsmsSenderId,
+          apiEndpoint: fmcsmsEndpoint,
         });
 
         if (result.success) {
-          console.log(`✅ [SMS SENT] To: ${phone} (${info.name} - ${info.role})`);
+          console.log(`✅ [FMCSMS SENT] To: ${phone} (${info.name} - ${info.role})`);
         } else {
           status = 'FAILED';
           errorMessage = result.error;
-          console.warn(`❌ [SMS FAILED] To: ${phone} (${info.name}): ${result.error}`);
+          console.warn(`❌ [FMCSMS FAILED] To: ${phone} (${info.name}): ${result.error}`);
         }
       } else {
-        // Safe Simulation Mode: Log to console and record in Supabase
         status = 'SIMULATED';
-        errorMessage = 'httpSMS credentials not set in .env (Simulation Mode)';
-        console.log(`📱 [SMS SIMULATION] To: ${phone} (${info.name} - ${info.role})`);
+        errorMessage = 'FMCSMS API key pending in .env (Safe Simulation Mode)';
+        console.log(`📱 [FMCSMS SIMULATION] To: ${phone} (${info.name} - ${info.role})`);
         console.log(`   Message:\n   ${messageContent.replace(/\n/g, '\n   ')}\n`);
       }
 
@@ -287,7 +290,7 @@ Immediate response requested!`;
           incident_id: incidentId,
           profile_id: profileId,
           recipient_phone: phone,
-          sender_phone: fromNumber || 'SYSTEM_SIMULATOR',
+          sender_phone: senderUsed,
           recipient_name: info.name,
           recipient_role: info.role,
           message_content: messageContent,
@@ -298,16 +301,16 @@ Immediate response requested!`;
         console.warn('⚠️ Could not write to sms_logs table:', logErr.message);
       }
 
-      // Pacing delay (300ms) to prevent hitting Android OS background rate limits
+      // Pacing delay (300ms)
       await new Promise(resolve => setTimeout(resolve, 300));
     }
   } catch (err) {
-    // Non-blocking catch-all: Never allow an SMS error to crash the bridge!
-    console.error('❌ [SMS Gateway Critical Error]:', err.message);
+    console.error('❌ [FMCSMS Gateway Critical Error]:', err.message);
   }
 }
 
 module.exports = {
   sendAutomatedEmergencySms,
   normalizePhoneNumber,
+  sendFmcsmsMessage,
 };

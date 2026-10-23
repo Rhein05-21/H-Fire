@@ -1,0 +1,194 @@
+================================================================================
+H-FIRE SYSTEM ARCHITECTURE & EMERGENCY RESPONSE FLOW CHART FOR DRAW.IO
+================================================================================
+
+HOW TO USE IN DRAW.IO (diagrams.net):
+--------------------------------------------------------------------------------
+METHOD 1 (Recommended - Fastest via Mermaid):
+1. Open https://app.diagrams.net (draw.io).
+2. Create a new blank diagram.
+3. In the top toolbar, click "+" (Insert) -> "Advanced" -> "Mermaid".
+4. Copy and paste the code from [SECTION 1: MERMAID CODE] below.
+5. Click "Insert". Draw.io will automatically lay out and render the shapes.
+
+METHOD 2 (Native draw.io XML):
+1. In draw.io, click "Extras" in the menu bar -> "Edit Diagram".
+2. Select all existing text and paste the code from [SECTION 2: DRAW.IO XML CODE].
+3. Click "OK".
+
+================================================================================
+SECTION 1: MERMAID CODE (Paste into Insert > Advanced > Mermaid)
+================================================================================
+
+flowchart TD
+    %% Styling
+    classDef hardware fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0D47A1;
+    classDef broker fill:#EDE7F6,stroke:#512DA8,stroke-width:2px,color:#311B92;
+    classDef bridge fill:#FFF3E0,stroke:#E65100,stroke-width:2px,color:#BF360C;
+    classDef decision fill:#FFFDE7,stroke:#F57F17,stroke-width:2px,color:#F57F17;
+    classDef cloud fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1B5E20;
+    classDef emergency fill:#FFEBEE,stroke:#C62828,stroke-width:2px,color:#B71C1C;
+    classDef app fill:#E0F7FA,stroke:#00838F,stroke-width:2px,color:#006064;
+
+    subgraph IoT_Mesh["📡 LAYER 1: SENSOR MESH (ESP-NOW & IoT)"]
+        N2["Satellite Node 2 (N2)<br/>Living Room (MQ2 + Flame)"]:::hardware
+        N3["Satellite Node 3 (N3)<br/>Sector 3 / Ext (MQ2 + Flame)"]:::hardware
+        N1["Core Gateway Node 1 (N1)<br/>ESP32 Main Controller"]:::hardware
+        
+        N2 -- "ESP-NOW Local Mesh" --> N1
+        N3 -- "ESP-NOW Local Mesh" --> N1
+    end
+
+    subgraph Transmission["☁️ LAYER 2: MQTT BROKER"]
+        HiveMQ["HiveMQ MQTT Broker<br/>Topic: hfire/#"]:::broker
+        N1 -- "WiFi / WSS Uplink" --> HiveMQ
+    end
+
+    subgraph Backend_Bridge["⚙️ LAYER 3: TELEMETRY BRIDGE"]
+        Bridge["Node.js Telemetry Bridge<br/>(utils/hivemq-to-supabase-bridge.js)"]:::bridge
+        HiveMQ --> Bridge
+
+        Eval{"Hazard Evaluation<br/>PPM > 1500 OR Flame == 1?"}:::decision
+        Bridge --> Eval
+    end
+
+    subgraph Database_Layer["🗄️ LAYER 4: SUPABASE CLOUD"]
+        NormalLog["Log Normal Telemetry<br/>(In-Memory Broadcast)"]:::cloud
+        IncidentDB["Insert / Update Incident<br/>(incidents & gas_logs)"]:::cloud
+        SmsLogs["Audit Trail<br/>(sms_logs)"]:::cloud
+    end
+
+    Eval -- "No (Safe / Normal)" --> NormalLog
+    Eval -- "YES (DANGER DETECTED)" --> IncidentDB
+
+    subgraph Alert_Dispatch["🚨 LAYER 5: EMERGENCY DISPATCH"]
+        PushService["Expo Push Service<br/>(FCM / APNs)"]:::emergency
+        FMCSMSService["FMCSMS Gateway API v3<br/>(https://dashboard.fmcsms.com)"]:::emergency
+    end
+
+    IncidentDB --> PushService
+    IncidentDB --> FMCSMSService
+    FMCSMSService --> SmsLogs
+
+    subgraph Resident_App["📱 LAYER 6: H-FIRE MOBILE APP (Expo)"]
+        PushNotif["High Priority Push Notification<br/>Channel: emergency-alerts"]:::app
+        RealtimeSub["Supabase Realtime Feed<br/>(Zero Disk I/O WebSocket)"]:::app
+
+        PushService --> PushNotif
+        NormalLog -.-> RealtimeSub
+        IncidentDB --> RealtimeSub
+
+        Modal["EMERGENCY ALERT MODAL<br/>• Fullscreen Fire/Smoke Siren Audio<br/>• TRIGGERED BY: Secondary Node 2/3<br/>• Real-time Live PPM Badge<br/>• One-Tap Auto SMS / 911 Call"]:::emergency
+
+        PushNotif --> Modal
+        RealtimeSub --> Modal
+    end
+
+    subgraph Recipients["👥 RECIPIENTS & FIRST RESPONDERS"]
+        Family["Household Family Members<br/>(Automated Emergency SMS)"]:::emergency
+        Guard["Community Guard / Admin Hotline<br/>(Automated SMS & Call)"]:::emergency
+        BFP["Bureau of Fire Protection (911)<br/>(Speed Dial Emergency Call)"]:::emergency
+    end
+
+    FMCSMSService --> Family
+    FMCSMSService --> Guard
+    Modal --> BFP
+
+================================================================================
+SECTION 2: DRAW.IO XML CODE (Paste into Extras > Edit Diagram)
+================================================================================
+
+<mxfile host="app.diagrams.net" modified="2026-10-20T00:00:00.000Z" agent="Mozilla/5.0" version="21.0.0" type="device">
+  <diagram id="HFireArchitecture" name="H-Fire System Architecture">
+    <mxGraphModel dx="1420" dy="850" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        
+        <!-- Containers / Layers -->
+        <mxCell id="layer1" value="LAYER 1: SENSOR MESH (ESP-NOW)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#1565C0;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="300" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="n2" value="Secondary Node 2 (N2)&#xa;Living Room (MQ2 + Flame)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontStyle=1;" vertex="1" parent="layer1">
+          <mxGeometry x="20" y="40" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="n3" value="Secondary Node 3 (N3)&#xa;Sector 3 / Ext (MQ2 + Flame)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontStyle=1;" vertex="1" parent="layer1">
+          <mxGeometry x="20" y="95" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="n1" value="Core Gateway Node 1 (N1)&#xa;ESP32 Main Controller" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#0D47A1;fontStyle=1;" vertex="1" parent="layer1">
+          <mxGeometry x="20" y="160" width="260" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ESP-NOW Connections -->
+        <mxCell id="edge1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.25;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="layer1" source="n2" target="n1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="layer1" source="n3" target="n1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Layer 2: MQTT -->
+        <mxCell id="hivemq" value="HiveMQ MQTT Broker&#xa;(WSS Topic: hfire/#)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE7F6;strokeColor=#512DA8;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="390" y="125" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="edge3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="n1" target="hivemq">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Layer 3: Bridge -->
+        <mxCell id="bridge" value="Node.js Telemetry Bridge&#xa;(hivemq-to-supabase-bridge.js)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="600" y="125" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="edge4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="hivemq" target="bridge">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Evaluation Diamond -->
+        <mxCell id="eval" value="PPM &gt; 1500&#xa;OR Flame == 1?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFDE7;strokeColor=#F57F17;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="635" y="230" width="130" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="edge5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="bridge" target="eval">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Supabase Cloud -->
+        <mxCell id="supabase" value="Supabase Cloud PostgreSQL&#xa;(incidents, gas_logs, sms_logs)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#E8F5E9;strokeColor=#2E7D32;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="600" y="380" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="edge6" value="YES (DANGER)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontColor=#D32F2F;fontStyle=1;" edge="1" parent="1" source="eval" target="supabase">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Dispatch Channels -->
+        <mxCell id="fmcsms" value="FMCSMS API v3 Gateway&#xa;(Automated Emergency SMS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEBEE;strokeColor=#C62828;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="380" y="490" width="190" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="push" value="Expo Push Notification Service&#xa;(High Priority Channel)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEBEE;strokeColor=#C62828;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="610" y="490" width="190" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="edge7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="supabase" target="fmcsms">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="supabase" target="push">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- App Emergency Modal -->
+        <mxCell id="modal" value="H-FIRE EMERGENCY ALERT MODAL&#xa;• Real-time Fire Siren &amp; Vibration&#xa;• TRIGGERED BY: Node Attribution&#xa;• Live PPM Counter Badge&#xa;• Speed Dial 911 / Hotline" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D32F2F;strokeColor=#B71C1C;fontColor=#ffffff;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="540" y="600" width="270" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="edge9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="push" target="modal">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Recipients -->
+        <mxCell id="contacts" value="Household Contacts &amp; Admin&#xa;(Emergency SMS Delivery)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F7FA;strokeColor=#00838F;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="140" y="490" width="190" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="edge10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="fmcsms" target="contacts">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

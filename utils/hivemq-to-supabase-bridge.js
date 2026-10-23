@@ -65,7 +65,7 @@ if (supabaseUrl && !supabaseUrl.includes('placeholder')) {
 }
 
 // 2. Broadcast Emergency Push Notifications
-async function sendPushNotification (ownerId, houseName, alertType, ppm, mac) {
+async function sendPushNotification (ownerId, houseName, alertType, ppm, mac, nodeName) {
   try {
     const tokens = new Set();
 
@@ -109,7 +109,7 @@ async function sendPushNotification (ownerId, houseName, alertType, ppm, mac) {
       sound: 'default',
       title: `🚨 EMERGENCY: ${alertType} DETECTED`,
       body: `${houseName}: Critical hazard detected (${ppm} PPM)! Check your H-Fire app immediately.`,
-      data: { houseName, alertType, ppm, mac, type: 'emergency' },
+      data: { houseName, alertType, ppm, mac, type: 'emergency', node_name: nodeName, label: nodeName },
       priority: 'high',
       channelId: 'emergency-alerts',
     }));
@@ -277,7 +277,7 @@ async function processTelemetryItem(data, topic, timestamp) {
     }
 
     if (status === 'Danger') {
-      await sendPushNotification(profileId, `${houseName || 'Resident Home'} (${nodeName})`, alertType, ppm, mac);
+      await sendPushNotification(profileId, `${houseName || 'Resident Home'} (${nodeName})`, alertType, ppm, mac, nodeName);
       await sendAutomatedEmergencySms(supabase, {
         incidentId: existingIncident ? existingIncident.id : null,
         profileId,

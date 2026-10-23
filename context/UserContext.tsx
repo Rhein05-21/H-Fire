@@ -28,6 +28,8 @@ export interface Incident {
   alert_type: 'FIRE' | 'GAS / SMOKE LEAK' | 'GAS/SMOKE' | 'SMOKE' | 'FLAME' | 'MODERATE SMOKE' | string; 
   device_mac?: string;
   status?: string;
+  notes?: string | null;
+  node_name?: string;
 }
 
 export interface Device {
@@ -333,6 +335,19 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
       if (dbProfile) {
         const adminFlag = Boolean(dbProfile.is_admin || dbProfile.role === 'admin' || dbProfile.role === 'hoa' || dbProfile.role === 'guard');
+        
+        // Strict role check: Officer/Admin accounts cannot access the Resident App
+        if (adminFlag) {
+          console.warn('[UserContext] Officer account detected in Resident app. Revoking session.');
+          await supabase.auth.signOut();
+          setUserDetailsState(null);
+          setIsAuthenticated(false);
+          setProfileId(null);
+          setIsAdmin(false);
+          setLoading(false);
+          return;
+        }
+
         const smsEnabled = dbProfile.auto_sms_enabled !== false;
         setUserDetailsState({ 
           name: dbProfile.name, 
@@ -341,12 +356,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           address: dbProfile.address,
           latitude: dbProfile.latitude, 
           longitude: dbProfile.longitude,
-          is_admin: adminFlag,
-          role: dbProfile.role,
+          is_admin: false,
+          role: dbProfile.role || 'resident',
           emergency_hotline: dbProfile.emergency_hotline,
           auto_sms_enabled: smsEnabled,
         });
-        setIsAdmin(adminFlag);
+        setIsAdmin(false);
         setAutoSmsEnabled(smsEnabled);
       }
 
@@ -894,16 +909,26 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             const curProfile = profileIdRef.current;
             const isOwned = Boolean(curProfile && (newIncident.profile_id === curProfile || dev?.profile_id === curProfile));
 
+            // Extract node label from notes if present (e.g. "[Secondary Node 2 (Living Room)] ...")
+            let detectedNodeLabel = dev?.label || 'Gas / Fire Alarm';
+            if (newIncident.notes) {
+              const match = newIncident.notes.match(/\[(.*?)\]/);
+              if (match && match[1]) {
+                detectedNodeLabel = match[1];
+              }
+            }
+
             // Trigger emergency if owned by resident or user is admin
             if (isAdminRef.current || isOwned) {
               triggerEmergency({
                 id: newIncident.id,
                 house_name: dev?.house_name || userDetails?.name || 'My Household',
-                label: dev?.label || 'Gas / Fire Alarm',
+                label: detectedNodeLabel,
                 ppm: newIncident.ppm_at_trigger || 0,
                 alert_type: (newIncident.alert_type as any) || 'FIRE',
                 device_mac: newIncident.device_mac,
                 status: 'Active',
+                notes: newIncident.notes,
               });
             }
           }
