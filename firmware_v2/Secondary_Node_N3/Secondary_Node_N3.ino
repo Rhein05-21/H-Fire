@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * 🔥 H-FIRE IOT SYSTEM — SATELLITE SECTOR NODE 3 (BEDROOM / SECTOR 3)
+ * 🔥 H-FIRE IOT SYSTEM — SATELLITE SECTOR NODE 3 (BEDROOM)
  * ============================================================================
  * Architecture: Autonomous Satellite Mesh Sensor
  * Board: ESP32 Dev Module (WROOM-32)
@@ -15,6 +15,7 @@
  *     Gateway (MAC: 20:50:0D:33:68:0C) every 500ms.
  *  5. Smart Auto-Channel Lock: Automatically detects Core Node's Wi-Fi channel
  *     by testing channels 1-13 on boot and locks once Core acknowledges.
+ *  6. Bi-directional ESP-NOW Sync: Receives dynamic thresholds & tare commands.
  * ============================================================================
  */
 
@@ -28,79 +29,6 @@
 #include <Preferences.h>
 
 Preferences prefs;
-
-
-// ============================================================================
-// 5B. FLASH CALIBRATION PERSISTENCE (NVS)
-// ============================================================================
-void loadCalibrationFromFlash() {
-  prefs.begin("hfire_n3", false);
-  mq2_R0 = prefs.getFloat("mq2_r0", 10.0);
-  flame_ambient_baseline = prefs.getInt("flame_base", 2800);
-  flame_trigger_delta = prefs.getInt("flame_delta", 600);
-  threshold_safe_ppm = prefs.getInt("safe_ppm", 450);
-  threshold_danger_ppm = prefs.getInt("danger_ppm", 1500);
-  prefs.end();
-  Serial.printf("[Flash] Loaded N3 Calibration: R0=%.2f, FlameBase=%d, Safe=%d, Danger=%d\n",
-                mq2_R0, flame_ambient_baseline, threshold_safe_ppm, threshold_danger_ppm);
-}
-
-void saveCalibrationToFlash() {
-  prefs.begin("hfire_n3", false);
-  prefs.putFloat("mq2_r0", mq2_R0);
-  prefs.putInt("flame_base", flame_ambient_baseline);
-  prefs.putInt("flame_delta", flame_trigger_delta);
-  prefs.putInt("safe_ppm", threshold_safe_ppm);
-  prefs.putInt("danger_ppm", threshold_danger_ppm);
-  prefs.end();
-  Serial.printf("[Flash] Saved N3 Calibration to Flash.\n");
-}
-
-float calibrateMQ2CleanAir() {
-  float totalRs = 0;
-  const int SAMPLES = 50;
-  for (int i = 0; i < SAMPLES; i++) {
-    int mv = analogReadMilliVolts(PIN_MQ2_GAS);
-    totalRs += calculateRs(mv);
-    delay(50);
-  }
-  float derivedR0 = (totalRs / (float)SAMPLES) / MQ2_RO_CLEAN_AIR_FACTOR;
-  if (derivedR0 < 1.0) derivedR0 = 1.0;
-  mq2_R0 = derivedR0;
-  return derivedR0;
-}
-
-// Downlink Reception from Core Gateway
-void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
-  if (data_len == sizeof(CommandPacket)) {
-    CommandPacket cmd;
-    memcpy(&cmd, data, sizeof(CommandPacket));
-    
-    if (cmd.command_type == 1) { // SET_THRESHOLDS
-      threshold_safe_ppm = (int)cmd.safe_ppm;
-      threshold_danger_ppm = (int)cmd.danger_ppm;
-      flame_trigger_delta = (int)cmd.flame_delta;
-      saveCalibrationToFlash();
-      Serial.printf("[N3 RX] Synced Thresholds: Safe=%d, Danger=%d, Delta=%d\n",
-                    threshold_safe_ppm, threshold_danger_ppm, flame_trigger_delta);
-    } else if (cmd.command_type == 2) { // TARE_MQ2
-      isCalibrating = true;
-      digitalWrite(PIN_BUZZER, LOW);
-      calibrateMQ2CleanAir();
-      saveCalibrationToFlash();
-      isCalibrating = false;
-      Serial.printf("[N3 RX] Tared MQ-2 R0: %.2f kOhm\n", mq2_R0);
-    } else if (cmd.command_type == 3) { // TARE_FLAME
-      flame_ambient_baseline = analogReadMilliVolts(PIN_FLAME);
-      saveCalibrationToFlash();
-      Serial.printf("[N3 RX] Tared Flame Baseline: %d mV\n", flame_ambient_baseline);
-    } else if (cmd.command_type == 4) { // SILENCE
-      silenceUntilMillis = millis() + 10000;
-      digitalWrite(PIN_BUZZER, LOW);
-      Serial.println(F("[N3 RX] Silenced local alarm for 10s."));
-    }
-  }
-}
 
 // ============================================================================
 // 1. HARDWARE PIN DEFINITIONS & OLED CONFIGURATION
@@ -138,7 +66,7 @@ int   flame_trigger_delta           = 600;     // Detection threshold delta
 uint8_t coreGatewayAddress[] = {0x20, 0x50, 0x0D, 0x33, 0x68, 0x0C};
 
 // ============================================================================
-// 4. ESP-NOW PACKET DEFINITION
+// 4. ESP-NOW PACKET DEFINITIONS
 // ============================================================================
 typedef struct __attribute__((packed)) {
   uint8_t  node_id;        // Always 3 for this node
@@ -224,7 +152,79 @@ bool readCalibratedFlame() {
 }
 
 // ============================================================================
-// 7. BUZZER CONTROLLER (Local Autonomous Alarm)
+// 7. FLASH CALIBRATION PERSISTENCE (NVS) & ESP-NOW RECEIVER
+// ============================================================================
+void loadCalibrationFromFlash() {
+  prefs.begin("hfire_n3", false);
+  mq2_R0 = prefs.getFloat("mq2_r0", 10.0);
+  flame_ambient_baseline = prefs.getInt("flame_base", 2800);
+  flame_trigger_delta = prefs.getInt("flame_delta", 600);
+  threshold_safe_ppm = prefs.getInt("safe_ppm", 450);
+  threshold_danger_ppm = prefs.getInt("danger_ppm", 1500);
+  prefs.end();
+  Serial.printf("[Flash] Loaded N3 Calibration: R0=%.2f, FlameBase=%d, Safe=%d, Danger=%d\n",
+                mq2_R0, flame_ambient_baseline, threshold_safe_ppm, threshold_danger_ppm);
+}
+
+void saveCalibrationToFlash() {
+  prefs.begin("hfire_n3", false);
+  prefs.putFloat("mq2_r0", mq2_R0);
+  prefs.putInt("flame_base", flame_ambient_baseline);
+  prefs.putInt("flame_delta", flame_trigger_delta);
+  prefs.putInt("safe_ppm", threshold_safe_ppm);
+  prefs.putInt("danger_ppm", threshold_danger_ppm);
+  prefs.end();
+  Serial.printf("[Flash] Saved N3 Calibration to Flash.\n");
+}
+
+float calibrateMQ2CleanAir() {
+  float totalRs = 0;
+  const int SAMPLES = 50;
+  for (int i = 0; i < SAMPLES; i++) {
+    int mv = analogReadMilliVolts(PIN_MQ2_GAS);
+    totalRs += calculateRs(mv);
+    delay(50);
+  }
+  float derivedR0 = (totalRs / (float)SAMPLES) / MQ2_RO_CLEAN_AIR_FACTOR;
+  if (derivedR0 < 1.0) derivedR0 = 1.0;
+  mq2_R0 = derivedR0;
+  return derivedR0;
+}
+
+// Downlink Reception from Core Gateway
+void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
+  if (data_len == sizeof(CommandPacket)) {
+    CommandPacket cmd;
+    memcpy(&cmd, data, sizeof(CommandPacket));
+    
+    if (cmd.command_type == 1) { // SET_THRESHOLDS
+      threshold_safe_ppm = (int)cmd.safe_ppm;
+      threshold_danger_ppm = (int)cmd.danger_ppm;
+      flame_trigger_delta = (int)cmd.flame_delta;
+      saveCalibrationToFlash();
+      Serial.printf("[N3 RX] Synced Thresholds: Safe=%d, Danger=%d, Delta=%d\n",
+                    threshold_safe_ppm, threshold_danger_ppm, flame_trigger_delta);
+    } else if (cmd.command_type == 2) { // TARE_MQ2
+      isCalibrating = true;
+      digitalWrite(PIN_BUZZER, LOW);
+      calibrateMQ2CleanAir();
+      saveCalibrationToFlash();
+      isCalibrating = false;
+      Serial.printf("[N3 RX] Tared MQ-2 R0: %.2f kOhm\n", mq2_R0);
+    } else if (cmd.command_type == 3) { // TARE_FLAME
+      flame_ambient_baseline = analogReadMilliVolts(PIN_FLAME);
+      saveCalibrationToFlash();
+      Serial.printf("[N3 RX] Tared Flame Baseline: %d mV\n", flame_ambient_baseline);
+    } else if (cmd.command_type == 4) { // SILENCE
+      silenceUntilMillis = millis() + 10000;
+      digitalWrite(PIN_BUZZER, LOW);
+      Serial.println(F("[N3 RX] Silenced local alarm for 10s."));
+    }
+  }
+}
+
+// ============================================================================
+// 8. BUZZER CONTROLLER (Local Autonomous Alarm)
 // ============================================================================
 void manageLocalBuzzer(bool isWarning, bool isDanger) {
   unsigned long now = millis();
@@ -253,7 +253,7 @@ void manageLocalBuzzer(bool isWarning, bool isDanger) {
 }
 
 // ============================================================================
-// 8. OLED DISPLAY RENDERER
+// 9. OLED DISPLAY RENDERER
 // ============================================================================
 void updateOledHUD(const char* statusText, bool isWarning, bool isDanger) {
   display.clearDisplay();
@@ -307,7 +307,7 @@ void updateOledHUD(const char* statusText, bool isWarning, bool isDanger) {
 }
 
 // ============================================================================
-// 9. MAIN SETUP ROUTINE
+// 10. MAIN SETUP ROUTINE
 // ============================================================================
 void setup() {
   Serial.begin(115200);
@@ -329,21 +329,13 @@ void setup() {
   display.setCursor(15, 15);
   display.println(F("H-FIRE NODE 3"));
   display.setCursor(10, 28);
-  display.println(F("Sector: Bedroom / Ext"));
+  display.println(F("Sector: Bedroom"));
   display.setCursor(10, 44);
-  display.println(F("Auto-Taring Sensors..."));
+  display.println(F("Loading Sensors..."));
   display.display();
 
-  // Quick 1-second clean-air baseline auto-tare on boot
-  float totalRs = 0;
-  for (int i = 0; i < 20; i++) {
-    int mv = analogReadMilliVolts(PIN_MQ2_GAS);
-    totalRs += calculateRs(mv);
-    delay(50);
-  }
-  mq2_R0 = (totalRs / 20.0) / MQ2_RO_CLEAN_AIR_FACTOR;
-  if (mq2_R0 < 1.0) mq2_R0 = 1.0;
-  flame_ambient_baseline = analogReadMilliVolts(PIN_FLAME);
+  // Load Saved Calibration from Flash Memory
+  loadCalibrationFromFlash();
 
   // Wi-Fi Station Mode for ESP-NOW
   WiFi.mode(WIFI_STA);
@@ -362,7 +354,6 @@ void setup() {
 
   esp_now_register_send_cb((esp_now_send_cb_t)OnDataSent);
   esp_now_register_recv_cb((esp_now_recv_cb_t)OnDataRecv);
-  loadCalibrationFromFlash();
 
   // Register Core Gateway as Peer
   memcpy(peerInfo.peer_addr, coreGatewayAddress, 6);
@@ -374,11 +365,11 @@ void setup() {
     return;
   }
 
-  myPacket.node_id = 3; // Node ID 3
+  myPacket.node_id = 3;
 }
 
 // ============================================================================
-// 10. MAIN LOOP (Zero Blocking Delays)
+// 11. MAIN LOOP (Zero Blocking Delays)
 // ============================================================================
 void loop() {
   unsigned long now = millis();
