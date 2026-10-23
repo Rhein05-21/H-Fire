@@ -93,7 +93,9 @@ export default function SettingsScreen() {
     enableGuard,
     disableGuard,
     autoSmsEnabled,
-    toggleAutoSms
+    toggleAutoSms,
+    calibrationStatus,
+    sendCalibrationCommand
   } = useUser();
   
   const backgroundColor = useThemeColor({}, 'background');
@@ -133,6 +135,100 @@ export default function SettingsScreen() {
   const [faqCategory, setFaqCategory] = useState<'ALL' | 'ALERTS' | 'SMS' | 'HARDWARE'>('ALL');
   const [pinInput, setPinInput] = useState('');
   const [loadingGps, setLoadingGps] = useState(false);
+
+  // Sensor Calibration & Threshold Adjustment States
+  const [safePpm, setSafePpm] = useState<number>(450);
+  const [dangerPpm, setDangerPpm] = useState<number>(1500);
+  const [flameDelta, setFlameDelta] = useState<number>(600);
+  const [isCalibratingMQ2, setIsCalibratingMQ2] = useState<boolean>(false);
+  const [isCalibratingFlame, setIsCalibratingFlame] = useState<boolean>(false);
+  const [isSyncingThresholds, setIsSyncingThresholds] = useState<boolean>(false);
+  const [syncToast, setSyncToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!calibrationStatus) return;
+    if (calibrationStatus.lastEvent === 'CAL_SUCCESS') {
+      setIsCalibratingMQ2(false);
+      setIsCalibratingFlame(false);
+      setIsSyncingThresholds(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      let desc = 'ESP32 settings updated successfully!';
+      if (calibrationStatus.sensor === 'MQ2') desc = `Clean-Air R0 saved: ${calibrationStatus.r0?.toFixed(2)} kΩ`;
+      else if (calibrationStatus.sensor === 'FLAME') desc = `Ambient IR baseline zeroed: ${calibrationStatus.baseline} mV`;
+      else if (calibrationStatus.sensor === 'FLAME_DELTA') desc = `Flame sensitivity delta: ${calibrationStatus.delta} mV`;
+      else if (calibrationStatus.sensor === 'THRESHOLDS') desc = `Limits saved: Safe ${calibrationStatus.safePpm} PPM | Danger ${calibrationStatus.dangerPpm} PPM`;
+      setSyncToast(desc);
+      setTimeout(() => setSyncToast(null), 5000);
+    } else if (calibrationStatus.lastEvent === 'CAL_STATUS') {
+      if (calibrationStatus.safePpm) setSafePpm(calibrationStatus.safePpm);
+      if (calibrationStatus.dangerPpm) setDangerPpm(calibrationStatus.dangerPpm);
+      if (calibrationStatus.delta) setFlameDelta(calibrationStatus.delta);
+    }
+  }, [calibrationStatus]);
+
+  const handleTareMQ2 = () => {
+    setIsCalibratingMQ2(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const sent = sendCalibrationCommand('CALIBRATE_MQ2');
+    if (!sent) {
+      setIsCalibratingMQ2(false);
+      Alert.alert('Connection Issue', 'Could not reach HiveMQ cloud broker. Check Wi-Fi.');
+    } else {
+      setTimeout(() => setIsCalibratingMQ2(false), 5000);
+    }
+  };
+
+  const handleTareFlame = () => {
+    setIsCalibratingFlame(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const sent = sendCalibrationCommand('TARE_FLAME');
+    if (!sent) {
+      setIsCalibratingFlame(false);
+      Alert.alert('Connection Issue', 'Could not reach HiveMQ cloud broker.');
+    } else {
+      setTimeout(() => setIsCalibratingFlame(false), 3000);
+    }
+  };
+
+  const handleApplyThresholds = () => {
+    setIsSyncingThresholds(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    sendCalibrationCommand(`SET_THRESHOLDS: {"safe": ${safePpm}, "danger": ${dangerPpm}}`);
+    sendCalibrationCommand(`SET_FLAME_DELTA: {"delta": ${flameDelta}}`);
+    setTimeout(() => {
+      setIsSyncingThresholds(false);
+      setSyncToast(`Saved: Safe ${safePpm} PPM | Danger ${dangerPpm} PPM | Delta ${flameDelta} mV`);
+      setTimeout(() => setSyncToast(null), 4000);
+    }, 1500);
+  };
+
+  const handleResetDefaults = () => {
+    setSafePpm(450);
+    setDangerPpm(1500);
+    setFlameDelta(600);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    sendCalibrationCommand('SET_THRESHOLDS: {"safe": 450, "danger": 1500}');
+    sendCalibrationCommand('SET_FLAME_DELTA: {"delta": 600}');
+    setSyncToast('Reset to factory defaults: 450 PPM / 1500 PPM');
+    setTimeout(() => setSyncToast(null), 3000);
+  };
+
+  const applyPreset = (preset: 'STANDARD' | 'KITCHEN' | 'HIGH_SECURITY') => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (preset === 'STANDARD') {
+      setSafePpm(450);
+      setDangerPpm(1500);
+      setFlameDelta(600);
+    } else if (preset === 'KITCHEN') {
+      setSafePpm(600);
+      setDangerPpm(1800);
+      setFlameDelta(750);
+    } else if (preset === 'HIGH_SECURITY') {
+      setSafePpm(350);
+      setDangerPpm(1200);
+      setFlameDelta(450);
+    }
+  };
 
   const filteredFaqs = useMemo(() => {
     return FAQS.filter(item => {
@@ -574,6 +670,168 @@ export default function SettingsScreen() {
               )) : <Text style={{ color: secondaryText, textAlign: 'center' }}>No devices linked.</Text>}
             </View>
             <View style={[styles.section, { backgroundColor: cardBg }]}>
+            {/* SENSOR ADJUSTMENT & SOFTWARE CALIBRATION CARD */}
+            <View style={[styles.section, { backgroundColor: cardBg }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <View>
+                  <Text style={styles.sectionLabel}>SENSOR CALIBRATION & SENSITIVITY</Text>
+                  <Text style={{ fontSize: 12, color: secondaryText }}>OTA Hardware Thresholds (ESP32 Master)</Text>
+                </View>
+                <View style={{ backgroundColor: '#2196F320', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                  <Text style={{ color: '#2196F3', fontSize: 11, fontWeight: '800' }}>WIRELESS</Text>
+                </View>
+              </View>
+
+              {/* Toast Banner for ACK */}
+              {syncToast && (
+                <View style={{ backgroundColor: '#34C75920', padding: 12, borderRadius: 12, marginBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#34C75940' }}>
+                  <IconSymbol name="checkmark.circle.fill" size={18} color="#34C759" />
+                  <Text style={{ color: '#34C759', fontSize: 12, fontWeight: '700', flex: 1 }}>{syncToast}</Text>
+                </View>
+              )}
+
+              {/* Mode Presets */}
+              <Text style={{ fontSize: 12, fontWeight: '800', color: textColor, marginBottom: 8 }}>SENSITIVITY PRESETS</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 18 }}>
+                <TouchableOpacity 
+                  style={[styles.presetChip, safePpm === 450 && dangerPpm === 1500 ? styles.presetActive : { backgroundColor: inputBg }]} 
+                  onPress={() => applyPreset('STANDARD')}
+                >
+                  <Text style={[styles.presetText, safePpm === 450 && dangerPpm === 1500 && { color: '#fff' }]}>Standard</Text>
+                  <Text style={{ fontSize: 9, color: safePpm === 450 && dangerPpm === 1500 ? '#ffffffb0' : secondaryText }}>450 / 1500</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.presetChip, safePpm === 600 && dangerPpm === 1800 ? styles.presetActive : { backgroundColor: inputBg }]} 
+                  onPress={() => applyPreset('KITCHEN')}
+                >
+                  <Text style={[styles.presetText, safePpm === 600 && dangerPpm === 1800 && { color: '#fff' }]}>Kitchen</Text>
+                  <Text style={{ fontSize: 9, color: safePpm === 600 && dangerPpm === 1800 ? '#ffffffb0' : secondaryText }}>600 / 1800</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.presetChip, safePpm === 350 && dangerPpm === 1200 ? styles.presetActive : { backgroundColor: inputBg }]} 
+                  onPress={() => applyPreset('HIGH_SECURITY')}
+                >
+                  <Text style={[styles.presetText, safePpm === 350 && dangerPpm === 1200 && { color: '#fff' }]}>High Sensitivity</Text>
+                  <Text style={{ fontSize: 9, color: safePpm === 350 && dangerPpm === 1200 ? '#ffffffb0' : secondaryText }}>350 / 1200</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* MQ-2 Gas/Smoke Section */}
+              <View style={[styles.sensorControlCard, { backgroundColor: inputBg }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 }}>
+                  <IconSymbol name="waveform.path.ecg" size={20} color="#FF9500" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.sensorTitle, { color: textColor }]}>MQ-2 Smoke & Combustible Gas</Text>
+                    <Text style={{ fontSize: 11, color: secondaryText }}>ADC Pin 34 · Power-Law Curve</Text>
+                  </View>
+                  <TouchableOpacity 
+                    style={[styles.tareBtn, isCalibratingMQ2 && { opacity: 0.6 }]} 
+                    onPress={handleTareMQ2} 
+                    disabled={isCalibratingMQ2}
+                  >
+                    {isCalibratingMQ2 ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.tareBtnText}>Tare Clean Air</Text>}
+                  </TouchableOpacity>
+                </View>
+
+                {/* Safe Threshold Stepper */}
+                <View style={styles.stepperRow}>
+                  <View>
+                    <Text style={[styles.stepperLabel, { color: textColor }]}>Warning Trigger (Safe Limit)</Text>
+                    <Text style={{ fontSize: 11, color: secondaryText }}>Normal air baseline transition</Text>
+                  </View>
+                  <View style={styles.stepperGroup}>
+                    <TouchableOpacity style={styles.stepBtn} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSafePpm(p => Math.max(150, p - 50)); }}>
+                      <Text style={styles.stepBtnText}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={[styles.stepVal, { color: textColor }]}>{safePpm} PPM</Text>
+                    <TouchableOpacity style={styles.stepBtn} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSafePpm(p => Math.min(dangerPpm - 100, p + 50)); }}>
+                      <Text style={styles.stepBtnText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Danger Threshold Stepper */}
+                <View style={[styles.stepperRow, { marginTop: 12 }]}>
+                  <View>
+                    <Text style={[styles.stepperLabel, { color: '#FF3B30' }]}>Danger Siren Alarm (Critical)</Text>
+                    <Text style={{ fontSize: 11, color: secondaryText }}>Activates siren & auto-SMS</Text>
+                  </View>
+                  <View style={styles.stepperGroup}>
+                    <TouchableOpacity style={styles.stepBtn} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setDangerPpm(p => Math.max(safePpm + 100, p - 100)); }}>
+                      <Text style={styles.stepBtnText}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={[styles.stepVal, { color: '#FF3B30' }]}>{dangerPpm} PPM</Text>
+                    <TouchableOpacity style={styles.stepBtn} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setDangerPpm(p => Math.min(4000, p + 100)); }}>
+                      <Text style={styles.stepBtnText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+
+              {/* KY-026 Flame Sensor Section */}
+              <View style={[styles.sensorControlCard, { backgroundColor: inputBg, marginTop: 14 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 }}>
+                  <IconSymbol name="flame.fill" size={20} color="#FF3B30" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.sensorTitle, { color: textColor }]}>KY-026 Optical Flame Sensor</Text>
+                    <Text style={{ fontSize: 11, color: secondaryText }}>IR Phototransistor · Pin 32</Text>
+                  </View>
+                  <TouchableOpacity 
+                    style={[styles.tareBtn, { backgroundColor: '#FF3B30' }, isCalibratingFlame && { opacity: 0.6 }]} 
+                    onPress={handleTareFlame} 
+                    disabled={isCalibratingFlame}
+                  >
+                    {isCalibratingFlame ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.tareBtnText}>Tare Ambient IR</Text>}
+                  </TouchableOpacity>
+                </View>
+
+                {/* Flame Sensitivity Delta Stepper */}
+                <View style={styles.stepperRow}>
+                  <View>
+                    <Text style={[styles.stepperLabel, { color: textColor }]}>Flame Trigger Delta</Text>
+                    <Text style={{ fontSize: 11, color: secondaryText }}>IR drop from ambient lighting</Text>
+                  </View>
+                  <View style={styles.stepperGroup}>
+                    <TouchableOpacity style={styles.stepBtn} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setFlameDelta(d => Math.max(200, d - 50)); }}>
+                      <Text style={styles.stepBtnText}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={[styles.stepVal, { color: textColor }]}>{flameDelta} mV</Text>
+                    <TouchableOpacity style={styles.stepBtn} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setFlameDelta(d => Math.min(2000, d + 50)); }}>
+                      <Text style={styles.stepBtnText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+
+              {/* Sync Actions */}
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
+                <TouchableOpacity 
+                  style={[styles.syncBtn, { flex: 1, backgroundColor: '#2196F3' }]} 
+                  onPress={handleApplyThresholds} 
+                  disabled={isSyncingThresholds}
+                >
+                  {isSyncingThresholds ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <>
+                      <IconSymbol name="bolt.fill" size={16} color="#fff" />
+                      <Text style={styles.syncBtnText}>Sync to ESP32</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.syncBtn, { backgroundColor: inputBg, borderWidth: 1, borderColor: '#8E8E9340' }]} 
+                  onPress={handleResetDefaults}
+                >
+                  <Text style={[styles.syncBtnText, { color: secondaryText }]}>Reset</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={[styles.section, { backgroundColor: cardBg }]}>
               <Text style={styles.sectionLabel}>DEVICE DISCOVERY</Text>
               <TouchableOpacity style={[styles.scanBtn, { borderColor: '#2196F3' }]} onPress={scanForDevices} disabled={isScanning}>
                 {isScanning ? <ActivityIndicator color="#2196F3" /> : <><IconSymbol name="magnifyingglass" size={18} color="#2196F3" /><Text style={styles.scanBtnText}>Scan for New Device</Text></>}
@@ -1006,4 +1264,21 @@ const styles = StyleSheet.create({
   manualStatusDot: { width: 12, height: 12, borderRadius: 6, marginTop: 3 },
   manualStatusName: { fontSize: 13, fontWeight: '800' },
   manualStatusDesc: { fontSize: 11, fontWeight: '600', marginTop: 2 },
+
+  // Sensor Calibration Styles
+  presetChip: { flex: 1, paddingVertical: 10, paddingHorizontal: 6, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  presetActive: { backgroundColor: '#2196F3' },
+  presetText: { fontSize: 12, fontWeight: '800', color: '#8e8e93' },
+  sensorControlCard: { padding: 14, borderRadius: 16 },
+  sensorTitle: { fontSize: 14, fontWeight: '800' },
+  tareBtn: { backgroundColor: '#FF9500', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, minWidth: 95, alignItems: 'center' },
+  tareBtnText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  stepperRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  stepperLabel: { fontSize: 13, fontWeight: '700' },
+  stepperGroup: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  stepBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(33, 150, 243, 0.15)', alignItems: 'center', justifyContent: 'center' },
+  stepBtnText: { fontSize: 18, fontWeight: '900', color: '#2196F3', lineHeight: 20 },
+  stepVal: { fontSize: 14, fontWeight: '900', minWidth: 72, textAlign: 'center' },
+  syncBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, paddingHorizontal: 20, borderRadius: 14, gap: 8 },
+  syncBtnText: { fontWeight: '900', fontSize: 14, color: '#fff' },
 });

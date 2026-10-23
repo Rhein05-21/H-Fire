@@ -62,6 +62,18 @@ export interface SecondaryNodesState {
   N3: SecondaryNodeTelemetry;
 }
 
+export interface CalibrationStatus {
+  lastEvent?: 'CAL_SUCCESS' | 'CAL_STATUS';
+  sensor?: string;
+  r0?: number;
+  baseline?: number;
+  delta?: number;
+  safePpm?: number;
+  dangerPpm?: number;
+  mac?: string;
+  timestamp?: number;
+}
+
 interface UserContextType {
   userDetails: UserDetails | null;
   setUserDetails: (details: UserDetails) => void;
@@ -91,6 +103,8 @@ interface UserContextType {
   dismissGuardPrompt: () => Promise<void>;
   autoSmsEnabled: boolean;
   toggleAutoSms: (enabled: boolean) => Promise<void>;
+  calibrationStatus: CalibrationStatus | null;
+  sendCalibrationCommand: (cmd: string, topic?: string) => boolean;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -110,6 +124,22 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [activeIncident, setActiveIncident] = useState<Incident | null>(null);
   const [allHeardDevices, setAllHeardDevices] = useState<Record<string, Device>>({});
   const [registry, setRegistry] = useState<Record<string, DeviceRecord>>({});
+  const [calibrationStatus, setCalibrationStatus] = useState<CalibrationStatus | null>(null);
+  const mqttClientRef = useRef<any>(null);
+
+  const sendCalibrationCommand = useCallback((cmd: string, topic: string = 'hfire/house1/command') => {
+    if (mqttClientRef.current) {
+      try {
+        mqttClientRef.current.publish(topic, cmd);
+        console.log(`[MQTT TX] Published command to ${topic}: ${cmd}`);
+        return true;
+      } catch (e: any) {
+        console.warn('[MQTT TX Error]', e.message);
+        return false;
+      }
+    }
+    return false;
+  }, []);
   const [secondaryNodes, setSecondaryNodes] = useState<SecondaryNodesState>({
     N2: {
       id: 'N2',
@@ -968,7 +998,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       });
 
       client.on('connect', () => {
-        client.subscribe(['hfire/#', 'hfire/house1/data', 'hfire/house1/status', '#']);
+        mqttClientRef.current = client;
+        client.subscribe(['hfire/#', 'hfire/house1/data', 'hfire/house1/status', 'hfire/house1/command', '#']);
       });
 
       const handleTelemetryReading = (mac: string, ppm: number, flame: boolean, houseId: string = 'Home') => {
@@ -999,6 +1030,22 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           // 1. JSON Payload
           if (raw.startsWith('{') || raw.startsWith('[')) {
             const data = JSON.parse(raw);
+
+            // Check for calibration / sensor adjustment events from ESP32
+            if (data.event === 'CAL_SUCCESS' || data.event === 'CAL_STATUS') {
+              setCalibrationStatus({
+                lastEvent: data.event,
+                sensor: data.sensor,
+                r0: data.R0 !== undefined ? Number(data.R0) : (data.mq2_r0 !== undefined ? Number(data.mq2_r0) : undefined),
+                baseline: data.baseline !== undefined ? Number(data.baseline) : (data.flame_base !== undefined ? Number(data.flame_base) : undefined),
+                delta: data.delta !== undefined ? Number(data.delta) : (data.flame_delta !== undefined ? Number(data.flame_delta) : undefined),
+                safePpm: data.safe !== undefined ? Number(data.safe) : (data.safe_ppm !== undefined ? Number(data.safe_ppm) : undefined),
+                dangerPpm: data.danger !== undefined ? Number(data.danger) : (data.danger_ppm !== undefined ? Number(data.danger_ppm) : undefined),
+                mac: data.mac,
+                timestamp: Date.now(),
+              });
+              return;
+            }
 
             // Multi-node key check (N1_Gas, N1_Fire, etc.)
             const hasNKeys = typeof data === 'object' && Object.keys(data).some(k => /^N\d+_Gas$/i.test(k));
@@ -1228,7 +1275,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       promptGuard,
       dismissGuardPrompt,
       autoSmsEnabled,
-      toggleAutoSms
+      toggleAutoSms,
+      calibrationStatus,
+      sendCalibrationCommand
     }}>
       {children}
     </UserContext.Provider>
