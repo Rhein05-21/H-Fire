@@ -669,7 +669,6 @@ export default function SettingsScreen() {
                 </View>
               )) : <Text style={{ color: secondaryText, textAlign: 'center' }}>No devices linked.</Text>}
             </View>
-            <View style={[styles.section, { backgroundColor: cardBg }]}>
             {/* SENSOR ADJUSTMENT & SOFTWARE CALIBRATION CARD */}
             <View style={[styles.section, { backgroundColor: cardBg }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
