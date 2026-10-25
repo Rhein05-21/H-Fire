@@ -136,7 +136,7 @@ function RootLayoutContent() {
       try {
         await setAudioModeAsync({
           playsInSilentMode: true,
-          staysActiveInBackground: true,
+          interruptionMode: 'doNotMixPersistent',
         });
       } catch (e) {
         console.warn('Audio setup failed', e);

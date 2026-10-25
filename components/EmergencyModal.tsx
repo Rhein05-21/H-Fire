@@ -464,7 +464,7 @@ Immediate emergency assistance requested!`;
       try {
         await setAudioModeAsync({
           playsInSilentMode: true,
-          staysActiveInBackground: true,
+          interruptionMode: 'doNotMixPersistent',
         });
       } catch (e) {}
 

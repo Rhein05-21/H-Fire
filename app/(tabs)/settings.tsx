@@ -671,8 +671,8 @@ export default function SettingsScreen() {
             </View>
             {/* SENSOR ADJUSTMENT & SOFTWARE CALIBRATION CARD */}
             <View style={[styles.section, { backgroundColor: cardBg }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
                   <Text style={styles.sectionLabel}>SENSOR CALIBRATION & SENSITIVITY</Text>
                   <Text style={{ fontSize: 12, color: secondaryText }}>OTA Hardware Thresholds (ESP32 Master)</Text>
                 </View>
@@ -691,79 +691,131 @@ export default function SettingsScreen() {
 
               {/* Mode Presets */}
               <Text style={{ fontSize: 12, fontWeight: '800', color: textColor, marginBottom: 8 }}>SENSITIVITY PRESETS</Text>
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 18 }}>
+              <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
                 <TouchableOpacity 
                   style={[styles.presetChip, safePpm === 450 && dangerPpm === 1500 ? styles.presetActive : { backgroundColor: inputBg }]} 
                   onPress={() => applyPreset('STANDARD')}
                 >
-                  <Text style={[styles.presetText, safePpm === 450 && dangerPpm === 1500 && { color: '#fff' }]}>Standard</Text>
-                  <Text style={{ fontSize: 9, color: safePpm === 450 && dangerPpm === 1500 ? '#ffffffb0' : secondaryText }}>450 / 1500</Text>
+                  <Text style={[styles.presetText, safePpm === 450 && dangerPpm === 1500 && { color: '#fff' }]} numberOfLines={1}>Standard</Text>
+                  <Text style={{ fontSize: 9, color: safePpm === 450 && dangerPpm === 1500 ? '#ffffffb0' : secondaryText, marginTop: 2 }}>450 / 1500</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity 
                   style={[styles.presetChip, safePpm === 600 && dangerPpm === 1800 ? styles.presetActive : { backgroundColor: inputBg }]} 
                   onPress={() => applyPreset('KITCHEN')}
                 >
-                  <Text style={[styles.presetText, safePpm === 600 && dangerPpm === 1800 && { color: '#fff' }]}>Kitchen</Text>
-                  <Text style={{ fontSize: 9, color: safePpm === 600 && dangerPpm === 1800 ? '#ffffffb0' : secondaryText }}>600 / 1800</Text>
+                  <Text style={[styles.presetText, safePpm === 600 && dangerPpm === 1800 && { color: '#fff' }]} numberOfLines={1}>Kitchen</Text>
+                  <Text style={{ fontSize: 9, color: safePpm === 600 && dangerPpm === 1800 ? '#ffffffb0' : secondaryText, marginTop: 2 }}>600 / 1800</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity 
                   style={[styles.presetChip, safePpm === 350 && dangerPpm === 1200 ? styles.presetActive : { backgroundColor: inputBg }]} 
                   onPress={() => applyPreset('HIGH_SECURITY')}
                 >
-                  <Text style={[styles.presetText, safePpm === 350 && dangerPpm === 1200 && { color: '#fff' }]}>High Sensitivity</Text>
-                  <Text style={{ fontSize: 9, color: safePpm === 350 && dangerPpm === 1200 ? '#ffffffb0' : secondaryText }}>350 / 1200</Text>
+                  <Text style={[styles.presetText, safePpm === 350 && dangerPpm === 1200 && { color: '#fff' }]} numberOfLines={1}>Sensitive</Text>
+                  <Text style={{ fontSize: 9, color: safePpm === 350 && dangerPpm === 1200 ? '#ffffffb0' : secondaryText, marginTop: 2 }}>350 / 1200</Text>
                 </TouchableOpacity>
               </View>
 
               {/* MQ-2 Gas/Smoke Section */}
               <View style={[styles.sensorControlCard, { backgroundColor: inputBg }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 }}>
-                  <IconSymbol name="waveform.path.ecg" size={20} color="#FF9500" />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.sensorTitle, { color: textColor }]}>MQ-2 Smoke & Combustible Gas</Text>
-                    <Text style={{ fontSize: 11, color: secondaryText }}>ADC Pin 34 · Power-Law Curve</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8, gap: 8 }}>
+                    <View style={[styles.sensorIconBadge, { backgroundColor: 'rgba(255, 149, 0, 0.15)' }]}>
+                      <IconSymbol name="waveform.path.ecg" size={18} color="#FF9500" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.sensorTitle, { color: textColor }]} numberOfLines={1}>MQ-2 Gas / Smoke</Text>
+                      <Text style={{ fontSize: 11, color: secondaryText }}>ADC Pin 34 · Power-Law Curve</Text>
+                    </View>
                   </View>
                   <TouchableOpacity 
                     style={[styles.tareBtn, isCalibratingMQ2 && { opacity: 0.6 }]} 
                     onPress={handleTareMQ2} 
                     disabled={isCalibratingMQ2}
                   >
-                    {isCalibratingMQ2 ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.tareBtnText}>Tare Clean Air</Text>}
+                    {isCalibratingMQ2 ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.tareBtnText}>Tare Air</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
 
-                {/* Safe Threshold Stepper */}
-                <View style={styles.stepperRow}>
-                  <View>
-                    <Text style={[styles.stepperLabel, { color: textColor }]}>Warning Trigger (Safe Limit)</Text>
-                    <Text style={{ fontSize: 11, color: secondaryText }}>Normal air baseline transition</Text>
+                {/* Safe Threshold Stepper Block */}
+                <View style={[styles.thresholdBlock, { backgroundColor: cardBg, borderColor: '#8E8E9325', borderWidth: 1 }]}>
+                  <View style={styles.thresholdTopRow}>
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={[styles.statusDot, { backgroundColor: '#FF9500' }]} />
+                        <Text style={[styles.thresholdLabel, { color: textColor }]}>Warning Trigger (Safe Limit)</Text>
+                      </View>
+                      <Text style={[styles.thresholdSub, { color: secondaryText }]}>
+                        Normal air baseline transition
+                      </Text>
+                    </View>
+                    <View style={[styles.valBadge, { backgroundColor: 'rgba(255, 149, 0, 0.12)', borderColor: 'rgba(255, 149, 0, 0.35)', borderWidth: 1 }]}>
+                      <Text style={[styles.valBadgeText, { color: '#FF9500' }]}>{safePpm} PPM</Text>
+                    </View>
                   </View>
-                  <View style={styles.stepperGroup}>
-                    <TouchableOpacity style={styles.stepBtn} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSafePpm(p => Math.max(150, p - 50)); }}>
-                      <Text style={styles.stepBtnText}>−</Text>
+
+                  <View style={styles.stepperBar}>
+                    <TouchableOpacity 
+                      style={[styles.stepperBtnRound, { backgroundColor: 'rgba(33, 150, 243, 0.12)' }]} 
+                      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSafePpm(p => Math.max(150, p - 50)); }}
+                    >
+                      <Text style={[styles.stepperBtnRoundText, { color: '#2196F3' }]}>−</Text>
                     </TouchableOpacity>
-                    <Text style={[styles.stepVal, { color: textColor }]}>{safePpm} PPM</Text>
-                    <TouchableOpacity style={styles.stepBtn} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSafePpm(p => Math.min(dangerPpm - 100, p + 50)); }}>
-                      <Text style={styles.stepBtnText}>+</Text>
+
+                    <View style={styles.stepperCenterInfo}>
+                      <Text style={[styles.stepperBigVal, { color: textColor }]}>{safePpm}</Text>
+                      <Text style={[styles.stepperUnitText, { color: secondaryText }]}>PPM (Warning Level)</Text>
+                    </View>
+
+                    <TouchableOpacity 
+                      style={[styles.stepperBtnRound, { backgroundColor: 'rgba(33, 150, 243, 0.12)' }]} 
+                      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSafePpm(p => Math.min(dangerPpm - 100, p + 50)); }}
+                    >
+                      <Text style={[styles.stepperBtnRoundText, { color: '#2196F3' }]}>+</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
 
-                {/* Danger Threshold Stepper */}
-                <View style={[styles.stepperRow, { marginTop: 12 }]}>
-                  <View>
-                    <Text style={[styles.stepperLabel, { color: '#FF3B30' }]}>Danger Siren Alarm (Critical)</Text>
-                    <Text style={{ fontSize: 11, color: secondaryText }}>Activates siren & auto-SMS</Text>
+                {/* Danger Threshold Stepper Block */}
+                <View style={[styles.thresholdBlock, { backgroundColor: cardBg, borderColor: '#8E8E9325', borderWidth: 1, marginTop: 10 }]}>
+                  <View style={styles.thresholdTopRow}>
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={[styles.statusDot, { backgroundColor: '#FF3B30' }]} />
+                        <Text style={[styles.thresholdLabel, { color: '#FF3B30' }]}>Danger Siren Alarm (Critical)</Text>
+                      </View>
+                      <Text style={[styles.thresholdSub, { color: secondaryText }]}>
+                        Activates siren & auto-SMS
+                      </Text>
+                    </View>
+                    <View style={[styles.valBadge, { backgroundColor: 'rgba(255, 59, 48, 0.12)', borderColor: 'rgba(255, 59, 48, 0.35)', borderWidth: 1 }]}>
+                      <Text style={[styles.valBadgeText, { color: '#FF3B30' }]}>{dangerPpm} PPM</Text>
+                    </View>
                   </View>
-                  <View style={styles.stepperGroup}>
-                    <TouchableOpacity style={styles.stepBtn} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setDangerPpm(p => Math.max(safePpm + 100, p - 100)); }}>
-                      <Text style={styles.stepBtnText}>−</Text>
+
+                  <View style={styles.stepperBar}>
+                    <TouchableOpacity 
+                      style={[styles.stepperBtnRound, { backgroundColor: 'rgba(255, 59, 48, 0.12)' }]} 
+                      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setDangerPpm(p => Math.max(safePpm + 100, p - 100)); }}
+                    >
+                      <Text style={[styles.stepperBtnRoundText, { color: '#FF3B30' }]}>−</Text>
                     </TouchableOpacity>
-                    <Text style={[styles.stepVal, { color: '#FF3B30' }]}>{dangerPpm} PPM</Text>
-                    <TouchableOpacity style={styles.stepBtn} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setDangerPpm(p => Math.min(4000, p + 100)); }}>
-                      <Text style={styles.stepBtnText}>+</Text>
+
+                    <View style={styles.stepperCenterInfo}>
+                      <Text style={[styles.stepperBigVal, { color: '#FF3B30' }]}>{dangerPpm}</Text>
+                      <Text style={[styles.stepperUnitText, { color: secondaryText }]}>PPM (Danger Trigger)</Text>
+                    </View>
+
+                    <TouchableOpacity 
+                      style={[styles.stepperBtnRound, { backgroundColor: 'rgba(255, 59, 48, 0.12)' }]} 
+                      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setDangerPpm(p => Math.min(4000, p + 100)); }}
+                    >
+                      <Text style={[styles.stepperBtnRoundText, { color: '#FF3B30' }]}>+</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -771,34 +823,64 @@ export default function SettingsScreen() {
 
               {/* KY-026 Flame Sensor Section */}
               <View style={[styles.sensorControlCard, { backgroundColor: inputBg, marginTop: 14 }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 }}>
-                  <IconSymbol name="flame.fill" size={20} color="#FF3B30" />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.sensorTitle, { color: textColor }]}>KY-026 Optical Flame Sensor</Text>
-                    <Text style={{ fontSize: 11, color: secondaryText }}>IR Phototransistor · Pin 32</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8, gap: 8 }}>
+                    <View style={[styles.sensorIconBadge, { backgroundColor: 'rgba(255, 59, 48, 0.15)' }]}>
+                      <IconSymbol name="flame.fill" size={18} color="#FF3B30" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.sensorTitle, { color: textColor }]} numberOfLines={1}>KY-026 Flame Sensor</Text>
+                      <Text style={{ fontSize: 11, color: secondaryText }}>IR Phototransistor · Pin 32</Text>
+                    </View>
                   </View>
                   <TouchableOpacity 
                     style={[styles.tareBtn, { backgroundColor: '#FF3B30' }, isCalibratingFlame && { opacity: 0.6 }]} 
                     onPress={handleTareFlame} 
                     disabled={isCalibratingFlame}
                   >
-                    {isCalibratingFlame ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.tareBtnText}>Tare Ambient IR</Text>}
+                    {isCalibratingFlame ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.tareBtnText}>Tare IR</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
 
-                {/* Flame Sensitivity Delta Stepper */}
-                <View style={styles.stepperRow}>
-                  <View>
-                    <Text style={[styles.stepperLabel, { color: textColor }]}>Flame Trigger Delta</Text>
-                    <Text style={{ fontSize: 11, color: secondaryText }}>IR drop from ambient lighting</Text>
+                {/* Flame Sensitivity Delta Stepper Block */}
+                <View style={[styles.thresholdBlock, { backgroundColor: cardBg, borderColor: '#8E8E9325', borderWidth: 1 }]}>
+                  <View style={styles.thresholdTopRow}>
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={[styles.statusDot, { backgroundColor: '#2196F3' }]} />
+                        <Text style={[styles.thresholdLabel, { color: textColor }]}>Flame Trigger Delta</Text>
+                      </View>
+                      <Text style={[styles.thresholdSub, { color: secondaryText }]}>
+                        IR drop from ambient lighting
+                      </Text>
+                    </View>
+                    <View style={[styles.valBadge, { backgroundColor: 'rgba(33, 150, 243, 0.12)', borderColor: 'rgba(33, 150, 243, 0.35)', borderWidth: 1 }]}>
+                      <Text style={[styles.valBadgeText, { color: '#2196F3' }]}>{flameDelta} mV</Text>
+                    </View>
                   </View>
-                  <View style={styles.stepperGroup}>
-                    <TouchableOpacity style={styles.stepBtn} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setFlameDelta(d => Math.max(200, d - 50)); }}>
-                      <Text style={styles.stepBtnText}>−</Text>
+
+                  <View style={styles.stepperBar}>
+                    <TouchableOpacity 
+                      style={[styles.stepperBtnRound, { backgroundColor: 'rgba(33, 150, 243, 0.12)' }]} 
+                      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setFlameDelta(d => Math.max(200, d - 50)); }}
+                    >
+                      <Text style={[styles.stepperBtnRoundText, { color: '#2196F3' }]}>−</Text>
                     </TouchableOpacity>
-                    <Text style={[styles.stepVal, { color: textColor }]}>{flameDelta} mV</Text>
-                    <TouchableOpacity style={styles.stepBtn} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setFlameDelta(d => Math.min(2000, d + 50)); }}>
-                      <Text style={styles.stepBtnText}>+</Text>
+
+                    <View style={styles.stepperCenterInfo}>
+                      <Text style={[styles.stepperBigVal, { color: textColor }]}>{flameDelta}</Text>
+                      <Text style={[styles.stepperUnitText, { color: secondaryText }]}>mV (Sensitivity Delta)</Text>
+                    </View>
+
+                    <TouchableOpacity 
+                      style={[styles.stepperBtnRound, { backgroundColor: 'rgba(33, 150, 243, 0.12)' }]} 
+                      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setFlameDelta(d => Math.min(2000, d + 50)); }}
+                    >
+                      <Text style={[styles.stepperBtnRoundText, { color: '#2196F3' }]}>+</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -1264,20 +1346,31 @@ const styles = StyleSheet.create({
   manualStatusName: { fontSize: 13, fontWeight: '800' },
   manualStatusDesc: { fontSize: 11, fontWeight: '600', marginTop: 2 },
 
-  // Sensor Calibration Styles
-  presetChip: { flex: 1, paddingVertical: 10, paddingHorizontal: 6, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  // Sensor Calibration Styles (Mobile Responsive)
+  presetChip: { flex: 1, minWidth: 0, paddingVertical: 10, paddingHorizontal: 4, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   presetActive: { backgroundColor: '#2196F3' },
-  presetText: { fontSize: 12, fontWeight: '800', color: '#8e8e93' },
-  sensorControlCard: { padding: 14, borderRadius: 16 },
-  sensorTitle: { fontSize: 14, fontWeight: '800' },
-  tareBtn: { backgroundColor: '#FF9500', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, minWidth: 95, alignItems: 'center' },
+  presetText: { fontSize: 11, fontWeight: '800', color: '#8e8e93', textAlign: 'center' },
+  sensorControlCard: { padding: 14, borderRadius: 18 },
+  sensorIconBadge: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  sensorTitle: { fontSize: 13, fontWeight: '800' },
+  tareBtn: { backgroundColor: '#FF9500', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, alignItems: 'center', justifyContent: 'center', minWidth: 72 },
   tareBtnText: { color: '#fff', fontSize: 11, fontWeight: '800' },
-  stepperRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  stepperLabel: { fontSize: 13, fontWeight: '700' },
-  stepperGroup: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  stepBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(33, 150, 243, 0.15)', alignItems: 'center', justifyContent: 'center' },
-  stepBtnText: { fontSize: 18, fontWeight: '900', color: '#2196F3', lineHeight: 20 },
-  stepVal: { fontSize: 14, fontWeight: '900', minWidth: 72, textAlign: 'center' },
+
+  thresholdBlock: { padding: 12, borderRadius: 14, marginTop: 8 },
+  thresholdTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  thresholdLabel: { fontSize: 13, fontWeight: '800' },
+  thresholdSub: { fontSize: 11, marginTop: 2, lineHeight: 15 },
+  valBadge: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8 },
+  valBadgeText: { fontSize: 12, fontWeight: '900' },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+
+  stepperBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, paddingTop: 4 },
+  stepperBtnRound: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  stepperBtnRoundText: { fontSize: 24, fontWeight: '900', lineHeight: 26 },
+  stepperCenterInfo: { alignItems: 'center', justifyContent: 'center', flex: 1, paddingHorizontal: 8 },
+  stepperBigVal: { fontSize: 19, fontWeight: '900', letterSpacing: 0.5 },
+  stepperUnitText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', marginTop: 1 },
+
   syncBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, paddingHorizontal: 20, borderRadius: 14, gap: 8 },
   syncBtnText: { fontWeight: '900', fontSize: 14, color: '#fff' },
 });
