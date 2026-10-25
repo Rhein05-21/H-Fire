@@ -166,7 +166,39 @@ export default function SettingsScreen() {
     }
   }, [calibrationStatus]);
 
+  const myLinkedDevices = useMemo(() => Object.values(globalDevices || {}), [globalDevices]);
+
+  const scanForDevices = async () => {
+    setIsScanning(true);
+    setAvailableDevices([]);
+    await refreshProfile();
+    setTimeout(async () => {
+      const unowned = Object.values(allHeardDevices).filter(heard => {
+        const normalizedMac = heard.mac.toUpperCase();
+        const isAlreadyLinked = globalDevices[normalizedMac] !== undefined;
+        return !isAlreadyLinked;
+      });
+      setAvailableDevices(unowned);
+      setIsScanning(false);
+      if (unowned.length === 0) Alert.alert('None Found', 'No unlinked H-Fire devices detected.');
+    }, 2000);
+  };
+
+
+
   const handleTareMQ2 = () => {
+    if (myLinkedDevices.length === 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      Alert.alert(
+        'Link First on a Device',
+        'Please link an ESP32 device first before calibrating the MQ-2 sensor.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Scan for Device', onPress: () => scanForDevices() }
+        ]
+      );
+      return;
+    }
     setIsCalibratingMQ2(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const sent = sendCalibrationCommand('CALIBRATE_MQ2');
@@ -179,6 +211,18 @@ export default function SettingsScreen() {
   };
 
   const handleTareFlame = () => {
+    if (myLinkedDevices.length === 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      Alert.alert(
+        'Link First on a Device',
+        'Please link an ESP32 device first before zeroing the flame sensor.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Scan for Device', onPress: () => scanForDevices() }
+        ]
+      );
+      return;
+    }
     setIsCalibratingFlame(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const sent = sendCalibrationCommand('TARE_FLAME');
@@ -191,18 +235,56 @@ export default function SettingsScreen() {
   };
 
   const handleApplyThresholds = () => {
+    if (myLinkedDevices.length === 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      Alert.alert(
+        'Link First on a Device',
+        'Please link an ESP32 device first before syncing threshold settings.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Scan for Device', onPress: () => scanForDevices() }
+        ]
+      );
+      return;
+    }
+
     setIsSyncingThresholds(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    sendCalibrationCommand(`SET_THRESHOLDS: {"safe": ${safePpm}, "danger": ${dangerPpm}}`);
-    sendCalibrationCommand(`SET_FLAME_DELTA: {"delta": ${flameDelta}}`);
+    const sentThresholds = sendCalibrationCommand(`SET_THRESHOLDS: {"safe": ${safePpm}, "danger": ${dangerPpm}}`);
+    const sentFlame = sendCalibrationCommand(`SET_FLAME_DELTA: {"delta": ${flameDelta}}`);
+
+    if (!sentThresholds && !sentFlame) {
+      setIsSyncingThresholds(false);
+      Alert.alert('Connection Issue', 'Could not reach HiveMQ cloud broker. Check your internet connection.');
+      return;
+    }
+
+    const hasOnlineDevice = myLinkedDevices.some((d: any) => d.status !== 'OFFLINE');
+
     setTimeout(() => {
       setIsSyncingThresholds(false);
-      setSyncToast(`Saved: Safe ${safePpm} PPM | Danger ${dangerPpm} PPM | Delta ${flameDelta} mV`);
+      if (hasOnlineDevice) {
+        setSyncToast(`Saved & synced: Safe ${safePpm} PPM | Danger ${dangerPpm} PPM | Delta ${flameDelta} mV`);
+      } else {
+        setSyncToast('Command sent to broker! ESP32 is offline and will apply once online.');
+      }
       setTimeout(() => setSyncToast(null), 4000);
     }, 1500);
   };
 
   const handleResetDefaults = () => {
+    if (myLinkedDevices.length === 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      Alert.alert(
+        'Link First on a Device',
+        'Please link an ESP32 device first before resetting hardware settings.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Scan for Device', onPress: () => scanForDevices() }
+        ]
+      );
+      return;
+    }
     setSafePpm(450);
     setDangerPpm(1500);
     setFlameDelta(600);
@@ -275,23 +357,7 @@ export default function SettingsScreen() {
     }
   }, [userDetails]);
 
-  const myLinkedDevices = useMemo(() => Object.values(globalDevices), [globalDevices]);
 
-  const scanForDevices = async () => {
-    setIsScanning(true);
-    setAvailableDevices([]);
-    await refreshProfile();
-    setTimeout(async () => {
-      const unowned = Object.values(allHeardDevices).filter(heard => {
-        const normalizedMac = heard.mac.toUpperCase();
-        const isAlreadyLinked = globalDevices[normalizedMac] !== undefined;
-        return !isAlreadyLinked;
-      });
-      setAvailableDevices(unowned);
-      setIsScanning(false);
-      if (unowned.length === 0) Alert.alert('None Found', 'No unlinked H-Fire devices detected.');
-    }, 2000);
-  };
 
   const linkDevice = async (mac: string) => {
     if (myLinkedDevices.length >= 4) {
@@ -686,6 +752,19 @@ export default function SettingsScreen() {
                 <View style={{ backgroundColor: '#34C75920', padding: 12, borderRadius: 12, marginBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#34C75940' }}>
                   <IconSymbol name="checkmark.circle.fill" size={18} color="#34C759" />
                   <Text style={{ color: '#34C759', fontSize: 12, fontWeight: '700', flex: 1 }}>{syncToast}</Text>
+                </View>
+              )}
+
+              {/* Unlinked Hardware Warning Banner */}
+              {myLinkedDevices.length === 0 && (
+                <View style={{ backgroundColor: 'rgba(255, 149, 0, 0.10)', borderWidth: 1, borderColor: 'rgba(255, 149, 0, 0.35)', padding: 12, borderRadius: 12, marginBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <IconSymbol name="exclamationmark.triangle.fill" size={20} color="#FF9500" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: '#FF9500', fontSize: 13, fontWeight: '700' }}>Link First on a Device</Text>
+                    <Text style={{ color: secondaryText, fontSize: 11, marginTop: 2, lineHeight: 15 }}>
+                      No ESP32 hardware is linked. Link a device below to calibrate sensors and sync threshold settings.
+                    </Text>
+                  </View>
                 </View>
               )}
 
