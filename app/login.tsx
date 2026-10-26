@@ -79,7 +79,7 @@ export default function LoginScreen() {
   const [isStepValid, setIsStepValid] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
-  const webViewRef = useRef<WebView>(null);
+  const webViewRef = useRef<any>(null);
 
   useEffect(() => {
     if (isAuthenticated && !contextLoading) {

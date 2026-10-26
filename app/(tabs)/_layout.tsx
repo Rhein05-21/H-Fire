@@ -28,7 +28,7 @@ export default function TabLayout() {
           tabBarActiveTintColor: activeTintColor,
           tabBarInactiveTintColor: inactiveTintColor,
           headerShown: false,
-          tabBarButton: HapticTab,
+          tabBarButton: (props: any) => <HapticTab {...props} />,
           tabBarStyle: {
             backgroundColor: backgroundColor,
             borderTopWidth: 0,
@@ -58,21 +58,21 @@ export default function TabLayout() {
           name="index"
           options={{
             title: 'MONITOR',
-            tabBarIcon: ({ color }) => <IconSymbol size={22} name="waveform.path.ecg" color={color} />,
+            tabBarIcon: ({ color }) => <IconSymbol size={22} name="waveform.path.ecg" color={color as any} />,
           }}
         />
         <Tabs.Screen
           name="explore"
           options={{
             title: 'HISTORY',
-            tabBarIcon: ({ color }) => <IconSymbol size={22} name="clock.fill" color={color} />,
+            tabBarIcon: ({ color }) => <IconSymbol size={22} name="clock.fill" color={color as any} />,
           }}
         />
         <Tabs.Screen
           name="settings"
           options={{
             title: 'SETTINGS',
-            tabBarIcon: ({ color }) => <IconSymbol size={22} name="gearshape.fill" color={color} />,
+            tabBarIcon: ({ color }) => <IconSymbol size={22} name="gearshape.fill" color={color as any} />,
           }}
         />
       </Tabs>

@@ -68,7 +68,7 @@ export default function SignupScreen() {
   const [error, setError] = useState('');
   const [isStepValid, setIsStepValid] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
-  const webViewRef = useRef<WebView>(null);
+  const webViewRef = useRef<any>(null);
 
   // Password Requirements State
   const hasMinLength = password.length >= 8;

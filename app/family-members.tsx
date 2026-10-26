@@ -342,7 +342,7 @@ export default function FamilyMembersScreen() {
                 <IconSymbol name="plus" size={24} color="#fff" />
                 <Text style={styles.addFabText}>Add Member</Text>
               </TouchableOpacity>
-            ) : null
+            ) : undefined
           }
         />
       )}
