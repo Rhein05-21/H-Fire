@@ -56,6 +56,10 @@ const MAPPING = {
   'arrow.left.square.fill': 'exit-to-app',
   'map.fill': 'map',
   'plus.circle.fill': 'add-circle',
+  'wifi': 'wifi',
+  'wifi.exclamationmark': 'wifi-off',
+  'xmark': 'close',
+  'arrow.clockwise': 'refresh',
 } as unknown as IconMapping;
 
 /**

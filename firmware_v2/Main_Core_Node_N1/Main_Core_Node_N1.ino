@@ -469,6 +469,20 @@ void onMqttCommand(char* topic, byte* payload, unsigned int length) {
     state += "}";
     mqttClient.publish(TOPIC_DATA, state.c_str());
     Serial.println(F("[Calibration] Sent current calibration state via MQTT"));
+  } else if (msg.indexOf("RESET_WIFI") >= 0) {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 20);
+    display.println(F("WIFI RESET VIA APP"));
+    display.println(F("Rebooting AP..."));
+    display.display();
+
+    WiFiManager wm;
+    wm.resetSettings();
+    WiFi.disconnect(true, true);
+    delay(1000);
+    ESP.restart();
   }
 }
 

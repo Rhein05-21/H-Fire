@@ -135,6 +135,8 @@ export default function SettingsScreen() {
   const [faqCategory, setFaqCategory] = useState<'ALL' | 'ALERTS' | 'SMS' | 'HARDWARE'>('ALL');
   const [pinInput, setPinInput] = useState('');
   const [loadingGps, setLoadingGps] = useState(false);
+  const [showWifiPortalModal, setShowWifiPortalModal] = useState(false);
+  const [wifiPortalKey, setWifiPortalKey] = useState(0);
 
   // Sensor Calibration & Threshold Adjustment States
   const [safePpm, setSafePpm] = useState<number>(450);
@@ -735,6 +737,46 @@ export default function SettingsScreen() {
                 </View>
               )) : <Text style={{ color: secondaryText, textAlign: 'center' }}>No devices linked.</Text>}
             </View>
+            {/* ESP32 WI-FI CONFIGURATION CARD */}
+            <View style={[styles.section, { backgroundColor: cardBg }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={styles.sectionLabel}>ESP32 WI-FI SETUP</Text>
+                  <Text style={{ fontSize: 12, color: secondaryText }}>Connect your hardware node to 2.4GHz Wi-Fi</Text>
+                </View>
+                <View style={{ backgroundColor: 'rgba(52, 199, 89, 0.15)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                  <Text style={{ color: '#34C759', fontSize: 11, fontWeight: '800' }}>PORTAL</Text>
+                </View>
+              </View>
+
+              <View style={[styles.wifiGuideBox, { backgroundColor: inputBg }]}>
+                <View style={styles.wifiGuideStep}>
+                  <View style={styles.wifiStepBadge}><Text style={styles.wifiStepBadgeText}>1</Text></View>
+                  <Text style={[styles.wifiStepText, { color: textColor }]}>Turn on ESP32 or hold <Text style={{ fontWeight: '700' }}>BOOT</Text> for 3s until OLED says <Text style={{ color: '#2196F3', fontWeight: '700' }}>WIFI SETUP MODE</Text>.</Text>
+                </View>
+                <View style={styles.wifiGuideStep}>
+                  <View style={styles.wifiStepBadge}><Text style={styles.wifiStepBadgeText}>2</Text></View>
+                  <Text style={[styles.wifiStepText, { color: textColor }]}>Connect your phone's Wi-Fi to <Text style={{ color: '#FF9500', fontWeight: '700' }}>H-Fire-Gateway</Text>.</Text>
+                </View>
+                <View style={styles.wifiGuideStep}>
+                  <View style={styles.wifiStepBadge}><Text style={styles.wifiStepBadgeText}>3</Text></View>
+                  <Text style={[styles.wifiStepText, { color: textColor }]}>Tap button below to configure your home Wi-Fi directly inside this app!</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity 
+                style={[styles.openWifiPortalBtn, { backgroundColor: '#2196F3' }]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  setWifiPortalKey(k => k + 1);
+                  setShowWifiPortalModal(true);
+                }}
+              >
+                <IconSymbol name="wifi" size={18} color="#fff" />
+                <Text style={styles.openWifiPortalBtnText}>Open In-App Wi-Fi Setup Portal</Text>
+              </TouchableOpacity>
+            </View>
+
             {/* SENSOR ADJUSTMENT & SOFTWARE CALIBRATION CARD */}
             <View style={[styles.section, { backgroundColor: cardBg }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
@@ -1026,6 +1068,82 @@ export default function SettingsScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* IN-APP ESP32 WI-FI SETUP PORTAL (WEBVIEW) */}
+      <Modal visible={showWifiPortalModal} animationType="slide">
+        <SafeAreaView style={{ flex: 1, backgroundColor: cardBg }} edges={['top', 'bottom']}>
+          {/* Header Bar */}
+          <View style={[styles.portalHeader, { borderBottomColor: '#8E8E9325' }]}>
+            <TouchableOpacity 
+              style={styles.portalHeaderBtn} 
+              onPress={() => setShowWifiPortalModal(false)}
+            >
+              <IconSymbol name="xmark" size={18} color={textColor} />
+              <Text style={[styles.portalHeaderBtnText, { color: textColor }]}>Close</Text>
+            </TouchableOpacity>
+
+            <View style={{ alignItems: 'center' }}>
+              <Text style={[styles.portalTitle, { color: textColor }]}>ESP32 Wi-Fi Setup</Text>
+              <Text style={{ fontSize: 11, color: '#34C759', fontWeight: '600' }}>http://192.168.4.1/wifi</Text>
+            </View>
+
+            <TouchableOpacity 
+              style={styles.portalHeaderBtn} 
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setWifiPortalKey(k => k + 1);
+              }}
+            >
+              <IconSymbol name="arrow.clockwise" size={18} color="#2196F3" />
+              <Text style={[styles.portalHeaderBtnText, { color: '#2196F3' }]}>Reload</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Embedded WebView */}
+          <View style={{ flex: 1 }}>
+            <WebView
+              key={wifiPortalKey}
+              source={{ uri: 'http://192.168.4.1/wifi' }}
+              style={{ flex: 1, backgroundColor: '#0B0F19' }}
+              originWhitelist={['*']}
+              startInLoadingState={true}
+              renderLoading={() => (
+                <View style={styles.portalLoadingOverlay}>
+                  <ActivityIndicator size="large" color="#2196F3" />
+                  <Text style={[styles.portalLoadingText, { color: textColor }]}>Connecting to H-Fire-Gateway...</Text>
+                  <Text style={{ fontSize: 12, color: secondaryText, textAlign: 'center', marginTop: 6, paddingHorizontal: 40, lineHeight: 18 }}>
+                    Make sure your phone is connected to the "H-Fire-Gateway" Wi-Fi hotspot in your phone settings.
+                  </Text>
+                </View>
+              )}
+              renderError={() => (
+                <View style={styles.portalErrorContainer}>
+                  <IconSymbol name="wifi.exclamationmark" size={48} color="#FF9500" />
+                  <Text style={[styles.portalErrorTitle, { color: textColor }]}>Cannot Reach ESP32 Hotspot</Text>
+                  <Text style={[styles.portalErrorDesc, { color: secondaryText }]}>
+                    Your phone is not connected to <Text style={{ fontWeight: '700', color: textColor }}>H-Fire-Gateway</Text> or the ESP32 is not in setup mode.
+                  </Text>
+                  <View style={[styles.portalStepsBox, { backgroundColor: inputBg }]}>
+                    <Text style={[styles.portalStepItem, { color: textColor }]}>1. Check ESP32 OLED: should display <Text style={{ color: '#2196F3', fontWeight: '700' }}>"WIFI SETUP MODE"</Text></Text>
+                    <Text style={[styles.portalStepItem, { color: textColor }]}>2. Open phone Wi-Fi settings & connect to <Text style={{ color: '#FF9500', fontWeight: '700' }}>"H-Fire-Gateway"</Text></Text>
+                    <Text style={[styles.portalStepItem, { color: textColor }]}>3. Return here and tap <Text style={{ color: '#34C759', fontWeight: '700' }}>"Retry Connection"</Text></Text>
+                  </View>
+                  <TouchableOpacity 
+                    style={[styles.retryPortalBtn, { backgroundColor: '#2196F3' }]}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      setWifiPortalKey(k => k + 1);
+                    }}
+                  >
+                    <IconSymbol name="arrow.clockwise" size={16} color="#fff" />
+                    <Text style={styles.retryPortalBtnText}>Retry Connection</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            />
+          </View>
+        </SafeAreaView>
+      </Modal>
 
       {/* WEBVIEW MAP MODAL */}
       <Modal visible={showMap} animationType="slide">
@@ -1452,4 +1570,27 @@ const styles = StyleSheet.create({
 
   syncBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, paddingHorizontal: 20, borderRadius: 14, gap: 8 },
   syncBtnText: { fontWeight: '900', fontSize: 14, color: '#fff' },
+
+  // ESP32 Wi-Fi Setup Styles
+  wifiGuideBox: { padding: 14, borderRadius: 14, marginBottom: 14 },
+  wifiGuideStep: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 10 },
+  wifiStepBadge: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#2196F3', alignItems: 'center', justifyContent: 'center' },
+  wifiStepBadgeText: { color: '#fff', fontSize: 11, fontWeight: '900' },
+  wifiStepText: { fontSize: 12, flex: 1, lineHeight: 17 },
+  openWifiPortalBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 14, gap: 8 },
+  openWifiPortalBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+
+  portalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1 },
+  portalHeaderBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 6 },
+  portalHeaderBtnText: { fontSize: 13, fontWeight: '700' },
+  portalTitle: { fontSize: 15, fontWeight: '900' },
+  portalLoadingOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0B0F19' },
+  portalLoadingText: { fontSize: 15, fontWeight: '800', marginTop: 14 },
+  portalErrorContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#0B0F19' },
+  portalErrorTitle: { fontSize: 18, fontWeight: '900', marginTop: 14 },
+  portalErrorDesc: { fontSize: 13, textAlign: 'center', marginTop: 6, lineHeight: 18, paddingHorizontal: 16 },
+  portalStepsBox: { width: '100%', padding: 16, borderRadius: 14, marginTop: 20, marginBottom: 20, gap: 8 },
+  portalStepItem: { fontSize: 12, lineHeight: 18 },
+  retryPortalBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12, gap: 8 },
+  retryPortalBtnText: { color: '#fff', fontSize: 13, fontWeight: '800' },
 });
