@@ -35,10 +35,15 @@ Notifications.setNotificationHandler({
   } as any),
 });
 
-Sentry.init({
-  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
-  debug: false,
-});
+// Sentry initialization (only in production)
+if (!__DEV__ && process.env.EXPO_PUBLIC_SENTRY_DSN) {
+  try {
+    Sentry.init({
+      dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
+      debug: false,
+    });
+  } catch {}
+}
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -349,4 +354,4 @@ function RootLayout() {
   );
 }
 
-export default Sentry.wrap(RootLayout);
+export default RootLayout;
