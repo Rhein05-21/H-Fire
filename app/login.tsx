@@ -204,7 +204,11 @@ export default function LoginScreen() {
         const accessToken = params.access_token;
         const refreshToken = params.refresh_token;
 
-        if (accessToken) {
+        if (params.code) {
+          console.log('[Login] Exchanging OAuth PKCE code for session...');
+          const { error: exchangeErr } = await supabase.auth.exchangeCodeForSession(params.code);
+          if (exchangeErr) throw exchangeErr;
+        } else if (accessToken) {
           console.log('[Login] Setting session from browser return...');
           await supabase.auth.setSession({
             access_token: accessToken,
@@ -375,6 +379,27 @@ export default function LoginScreen() {
           {!isProfilePending && (
             <>
 
+
+              <View style={styles.orRow}>
+                <View style={styles.orLine} />
+                <Text style={[styles.orText, { color: subtitleColor }]}>OR</Text>
+                <View style={styles.orLine} />
+              </View>
+
+              <TouchableOpacity 
+                style={[styles.socialBtn, { backgroundColor: inputBg }]} 
+                onPress={handleSocialLogin} 
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color={textColor} />
+                ) : (
+                  <>
+                    <FontAwesome name="google" size={18} color="#EA4335" />
+                    <Text style={[styles.socialText, { color: textColor }]}>Continue with Google</Text>
+                  </>
+                )}
+              </TouchableOpacity>
 
               <TouchableOpacity style={styles.signupToggle} onPress={() => router.push('/signup')}>
                 <Text style={[styles.toggleBtnText, { color: subtitleColor }]}>
