@@ -48,4 +48,5 @@ build_error_raw.log
 *-firebase-adminsdk-*.json
 .idea/
 *.iml
+expo_qr.html
 
