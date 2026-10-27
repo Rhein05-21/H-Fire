@@ -93,6 +93,40 @@ export default function LoginScreen() {
     }
   }, [isAuthenticated, userDetails, contextLoading, isProfilePending]);
 
+  useEffect(() => {
+    const handleUrl = async (event: { url: string }) => {
+      console.log('[Login] Deep link callback URL:', event.url);
+      if (event.url && (event.url.includes('code=') || event.url.includes('access_token='))) {
+        try {
+          WebBrowser.dismissBrowser();
+          const params: Record<string, string> = {};
+          const regex = /[?&#]([^=#]+)=([^&#]*)/g;
+          let match;
+          while ((match = regex.exec(event.url)) !== null) {
+            params[match[1]] = decodeURIComponent(match[2]);
+          }
+          if (params.code) {
+            console.log('[Login] Exchanging OAuth PKCE code via deep link...');
+            await supabase.auth.exchangeCodeForSession(params.code);
+          } else if (params.access_token) {
+            console.log('[Login] Setting session via deep link...');
+            await supabase.auth.setSession({
+              access_token: params.access_token,
+              refresh_token: params.refresh_token || '',
+            });
+          }
+        } catch (e: any) {
+          console.error('[Login] Deep link OAuth error:', e.message);
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+
+    const sub = Linking.addEventListener('url', handleUrl);
+    return () => sub.remove();
+  }, []);
+
   const validateFirstName = (text: string) => {
     const cleaned = text.replace(/[0-9]/g, '');
     setFirstName(cleaned);
@@ -176,7 +210,7 @@ export default function LoginScreen() {
     setLoading(true);
     setError('');
     try {
-      const redirectUrl = AuthSession.makeRedirectUri({ path: 'login' });
+      const redirectUrl = Linking.createURL('login');
       console.log('[Login] Redirect URL:', redirectUrl);
 
       const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
@@ -201,6 +235,9 @@ export default function LoginScreen() {
           params[match[1]] = decodeURIComponent(match[2]);
         }
         
+        if (params.error) {
+          throw new Error(params.error_description || params.error);
+        }
         const accessToken = params.access_token;
         const refreshToken = params.refresh_token;
 
